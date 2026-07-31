@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Labyrinth — recordings</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./admin.css" />
+  </head>
+  <body class="admin">
+    <!-- login -->
+    <section id="login" class="screen" hidden>
+      <form class="scroll-panel narrow" id="login-form">
+        <h1 class="title">Keeper's Door</h1>
+        <p class="subtitle">Recordings for the labyrinth</p>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="password" autocomplete="current-password" required />
+        </label>
+        <p class="err" id="login-error" hidden></p>
+        <button class="btn gold" type="submit">Unlock</button>
+      </form>
+    </section>
+
+    <!-- console -->
+    <main id="console" class="admin-wrap" hidden>
+      <header class="admin-head">
+        <div>
+          <h1>Labyrinth recordings</h1>
+          <p id="summary"></p>
+        </div>
+        <div class="head-actions">
+          <a class="btn ghost" href="/">Open the game</a>
+          <button class="btn ghost" id="logout">Lock</button>
+        </div>
+      </header>
+
+      <section class="card-block">
+        <h2>Add a recording</h2>
+        <form id="upload-form">
+          <div class="row">
+            <label class="field">
+              <span>Who recorded it</span>
+              <input type="text" id="up-name" placeholder="Anna" required />
+            </label>
+            <label class="field">
+              <span>How she knows them <em>(optional)</em></span>
+              <input type="text" id="up-relation" placeholder="her sister" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Audio file <em>(mp3, m4a, wav, ogg, webm — up to 25 MB)</em></span>
+            <input type="file" id="up-file" accept="audio/*,video/mp4,.m4a,.opus" required />
+          </label>
+          <p class="err" id="upload-error" hidden></p>
+          <button class="btn gold" type="submit" id="upload-btn">Upload</button>
+        </form>
+      </section>
+
+      <section class="card-block">
+        <h2>Collectibles on the board</h2>
+        <p class="muted">
+          By default every recording becomes one treasure, so the board grows as
+          messages arrive. Set a number to cap it — useful for a shorter game.
+        </p>
+        <form id="settings-form" class="row">
+          <label class="field">
+            <span>Her name <em>(optional, shown on the title screen)</em></span>
+            <input type="text" id="set-player" placeholder="" />
+          </label>
+          <label class="field narrow-field">
+            <span>Collectibles</span>
+            <input type="number" id="set-count" min="0" max="24" placeholder="all" />
+          </label>
+          <button class="btn" type="submit">Save</button>
+        </form>
+      </section>
+
+      <section class="card-block">
+        <h2>Uploaded</h2>
+        <ul class="rec-list" id="rec-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="./admin.ts"></script>
+  </body>
+</html>

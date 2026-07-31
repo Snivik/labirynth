@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1c2f74" />
+    <title>Labyrinth — Birthday Edition</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- start screen -->
+    <section id="start" class="screen">
+      <div class="scroll-panel">
+        <div class="crest" id="start-crest"></div>
+        <h1 class="title">Labyrinth</h1>
+        <p class="subtitle" id="start-subtitle">Birthday Edition</p>
+
+        <div class="blurb">
+          <p id="start-intro">
+            Somewhere in these shifting corridors, people who love you have hidden
+            their voices. Find every treasure, then make your way home.
+          </p>
+          <ol>
+            <li>Your card shows the treasure you must reach — it glows on the board.</li>
+            <li>Every turn you <strong>must</strong> slide the spare tile into the maze at one of the
+              gold arrows. You cannot push it straight back where it just came out.</li>
+            <li>Then walk as far as the open corridors allow, or stay where you are.</li>
+            <li>Reach the treasure and a message unlocks. Then a rival shoves the
+              spare tile in somewhere of its own choosing.</li>
+            <li>Collect them all and return to your corner to win.</li>
+          </ol>
+        </div>
+
+        <p class="card-caption"><small>Choose your adventurer</small></p>
+        <div class="pawn-choice" id="pawn-choice"></div>
+
+        <div class="start-actions">
+          <button class="btn gold" id="begin">Enter the labyrinth</button>
+          <button class="btn ghost" id="resume" hidden>Resume saved game</button>
+        </div>
+
+        <p class="note" id="start-note"></p>
+      </div>
+    </section>
+
+    <!-- game -->
+    <main id="game" hidden>
+      <div class="layout">
+        <div class="board-area">
+          <div class="frame" id="frame">
+            <div class="corner-tris"></div>
+            <div class="board" id="board"></div>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <div class="panel-head">
+            <h1>Labyrinth</h1>
+            <p id="panel-sub">Birthday Edition</p>
+          </div>
+
+          <div class="deck" id="deck"></div>
+          <p class="card-caption" id="card-caption"></p>
+
+          <div class="status" id="status"></div>
+
+          <div class="progress" id="progress"></div>
+
+          <div class="controls">
+            <button class="btn" id="stay" disabled>Stay put</button>
+            <button class="btn" id="messages" hidden>Messages</button>
+            <button class="btn" id="mute">Sound on</button>
+            <button class="btn" id="restart">Restart</button>
+          </div>
+
+          <p class="turn-meta" id="turn-meta"></p>
+        </aside>
+      </div>
+    </main>
+
+    <!-- treasure unlocked -->
+    <div id="reveal-scrim" class="scrim" hidden>
+      <div class="reveal" id="reveal"></div>
+    </div>
+
+    <!-- ending -->
+    <div id="finale-scrim" class="scrim" hidden>
+      <div class="finale" id="finale"></div>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

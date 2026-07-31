@@ -1,0 +1,246 @@
+/* Upload console — plain and functional, same palette as the game. */
+
+body.admin {
+  background: radial-gradient(ellipse at 50% -10%, #2c3f7a 0%, #1a1f38 55%, #10131f 100%);
+}
+
+.scroll-panel.narrow {
+  max-width: 400px;
+}
+
+.field {
+  display: block;
+  text-align: left;
+  margin-bottom: 14px;
+}
+
+.field > span {
+  display: block;
+  font-size: 0.78rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+  color: #6b4a24;
+}
+
+.field em {
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+
+.field input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.98rem;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 2px solid #b99a48;
+  background: #fffdf5;
+  color: var(--ink);
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(28, 47, 116, 0.16);
+}
+
+.err {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(200, 56, 46, 0.12);
+  border: 1px solid #c8382e;
+  color: #8c241c;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.admin-wrap {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 34px 20px 70px;
+}
+
+.admin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.admin-head h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.admin-head p {
+  margin: 4px 0 0;
+  color: #b8a887;
+  font-size: 0.9rem;
+}
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.head-actions .btn {
+  color: #f6e9c4;
+  border-color: #c9a94e;
+  background: rgba(255, 255, 255, 0.06);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.head-actions .btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.card-block {
+  background: linear-gradient(#f8f2df, var(--parchment-deep));
+  color: var(--ink);
+  border: 2px solid #c9a94e;
+  border-radius: 12px;
+  padding: 22px 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+}
+
+.card-block h2 {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--navy);
+}
+
+.card-block .muted {
+  margin: -4px 0 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #6b4a24;
+}
+
+.row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.row .field {
+  flex: 1 1 200px;
+  margin-bottom: 14px;
+}
+
+.row .narrow-field {
+  flex: 0 0 130px;
+}
+
+.row .btn {
+  margin-bottom: 14px;
+}
+
+.rec-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rec {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid #d3bd85;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.rec.inactive {
+  opacity: 0.5;
+}
+
+.rec .num {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #ffe9a8;
+  display: grid;
+  place-items: center;
+  font-size: 0.95rem;
+}
+
+.rec-main strong {
+  display: block;
+  font-size: 1.02rem;
+}
+
+.rec-main small {
+  color: #6b4a24;
+  font-size: 0.8rem;
+}
+
+.rec-main .treasure {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: #7a5a30;
+  font-style: italic;
+}
+
+.rec-main .treasure svg {
+  width: 22px;
+  height: 22px;
+}
+
+.rec audio {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 34px;
+}
+
+.rec-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.rec-actions button {
+  border: 1px solid #b99a48;
+  background: #fffdf5;
+  color: #6b4a24;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+.rec-actions button:hover {
+  background: #fff;
+  border-color: var(--navy);
+}
+
+.rec-actions .danger:hover {
+  border-color: #c8382e;
+  color: #8c241c;
+}
+
+.empty {
+  color: #6b4a24;
+  font-style: italic;
+  margin: 0;
+}
