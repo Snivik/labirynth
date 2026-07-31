@@ -34,6 +34,24 @@ including a 300-turn playthrough that has to end in a legitimate win.
 bun test
 ```
 
+## On a phone
+
+The whole 7×7 board stays on screen — no pinching, no panning. Seven tiles at
+~42px is 300px, which fits a 375px phone, and route planning needs the entire
+maze visible at once. Reading a treasure off a small tile is never required
+either: the target tile wears a pulsing gold ring, and the card beside the board
+shows the same illustration.
+
+Two things change on a small screen. The spare tile rests *on* the board's
+border rather than out on the table, because a whole tile of margin is too
+expensive — it always parks opposite the last push, which is exactly where the
+blocked arrow is, so it only ever covers a control that is already disabled. And
+the arrows get invisible padding that grows outward only, so they're properly
+tappable without stealing taps from the first row of tiles.
+
+Portrait puts the card beside the instructions under the board; landscape keeps
+the desktop side-by-side arrangement. Tested at 375×812, 844×390 and 1500×940.
+
 ## Getting the recordings in
 
 Everything happens at **`/admin`**, behind the `ADMIN_PASSWORD` you set.

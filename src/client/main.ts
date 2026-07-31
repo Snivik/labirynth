@@ -61,6 +61,9 @@ const SAVE_KEY = "labyrinth-save-v2";
 const SLIDE_MS = 420;
 const STEP_MS = 140;
 
+/** Touch screens get no hover previews — they'd latch on tap and never clear. */
+const HOVER_CAPABLE = window.matchMedia("(hover: hover)").matches;
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 
@@ -75,8 +78,13 @@ let busy = false;
 /** One DOM node per tile, kept for the whole game so tiles animate as they slide. */
 const tileEls = new Map<string, HTMLElement>();
 let pawnEl: HTMLElement;
-/** Where the spare tile is parked, in board coordinates (may be off-grid). */
-let sparePark = { r: 3, c: SIZE, axis: "x" as "x" | "y", sign: 1 };
+/**
+ * Where the spare tile is parked, in board coordinates (off-grid by one).
+ * Column 0 has no arrow, so the opening position covers no control — and on a
+ * phone, where the spare rests on the frame band, that matters.
+ */
+const START_PARK = { r: SIZE, c: 0, axis: "y" as "x" | "y", sign: 1 };
+let sparePark = { ...START_PARK };
 
 /* ─────────────────────────── boot ─────────────────────────── */
 
@@ -199,15 +207,19 @@ function buildArrows() {
     b.dataset.arrow = arrow.id;
     b.innerHTML = arrowSVG();
     b.title = "Slide the spare tile in here";
+    b.setAttribute("aria-label", `Push the spare tile in from the ${arrow.side}`);
     b.addEventListener("click", () => void onArrowClick(arrow.id));
-    b.addEventListener("mouseenter", () => previewShift(arrow.id, true));
-    b.addEventListener("mouseleave", () => previewShift(arrow.id, false));
+    // on a touch screen mouseenter fires on tap and the preview would stick
+    if (HOVER_CAPABLE) {
+      b.addEventListener("mouseenter", () => previewShift(arrow.id, true));
+      b.addEventListener("mouseleave", () => previewShift(arrow.id, false));
+    }
     frame.append(b);
   }
 }
 
 function resetSparePark() {
-  sparePark = { r: 3, c: SIZE, axis: "x", sign: 1 };
+  sparePark = { ...START_PARK };
 }
 
 /** Park the spare beside the board, one step past the square it was ejected from. */
@@ -257,7 +269,8 @@ function layout(immediate = false) {
   const spareEl = tileEls.get(state.spare.id)!;
   place(spareEl, sparePark.r, sparePark.c);
   spareEl.classList.add("is-spare");
-  const nudge = `calc(var(--pad) * ${0.55 * sparePark.sign})`;
+  // how far past the frame the spare rests; the stylesheet tunes it per screen
+  const nudge = `calc(var(--spare-nudge) * ${sparePark.sign})`;
   spareEl.style.setProperty(sparePark.axis === "x" ? "--nx" : "--ny", nudge);
   spareEl.style.removeProperty(sparePark.axis === "x" ? "--ny" : "--nx");
 
@@ -355,7 +368,7 @@ function renderPanel() {
 
   ($("stay") as HTMLButtonElement).disabled = state.phase !== "move" || busy;
   $("messages").hidden = state.collected.length === 0;
-  $("mute").textContent = isMuted() ? "Sound FX off" : "Sound FX on";
+  $("mute").textContent = isMuted() ? "Sound off" : "Sound on";
   const total = state.collected.length + state.deck.length;
   $("turn-meta").textContent = `Turn ${state.turn} · ${state.pushes} ${
     state.pushes === 1 ? "tile" : "tiles"
@@ -725,7 +738,7 @@ $("stay").addEventListener("click", () => void takeTurn({ ...state.pawn }));
 $("messages").addEventListener("click", showMessages);
 $("mute").addEventListener("click", () => {
   setMuted(!isMuted());
-  $("mute").textContent = isMuted() ? "Sound FX off" : "Sound FX on";
+  $("mute").textContent = isMuted() ? "Sound off" : "Sound on";
 });
 $("restart").addEventListener("click", () => {
   if (!confirm("Start a brand new labyrinth? Unlocked messages stay unlocked in Messages.")) return;
