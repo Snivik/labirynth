@@ -85,12 +85,21 @@ whom. Any game in progress resets — do your deleting before the day.
 1. Push this repo to GitHub, then **New Project → Deploy from GitHub repo**.
    `railway.json` selects the Dockerfile; the health check is `/api/health`.
 
-2. Add a **volume** — this is the important step, without it the recordings
-   vanish on every redeploy:
+2. Add a **volume** — without it the recordings vanish on every redeploy.
+   Create it from the project canvas (`⌘K` → *Create Volume*, or right-click the
+   canvas), attach it to this service, and set:
 
    | | |
    |---|---|
    | Mount path | `/data` |
+
+   It must be that exact absolute path, because the Dockerfile sets
+   `DATA_DIR=/data`. Mount it anywhere else and the app keeps writing to the
+   container's throwaway layer.
+
+   Then open `/admin` — the banner at the top says in plain words whether the
+   recordings are safe. See [Is the storage actually persistent?](#is-the-storage-actually-persistent)
+   below.
 
 3. Set the variables:
 
@@ -104,6 +113,36 @@ whom. Any game in progress resets — do your deleting before the day.
 
 4. Generate a domain, upload the recordings at `/admin`, and send her the root
    URL.
+
+### Is the storage actually persistent?
+
+Don't guess at this — you only find out you were wrong after the files are gone.
+The banner at the top of `/admin` tells you which of four states you're in:
+
+| Banner | Meaning |
+|---|---|
+| **Persistent storage confirmed** (green) | The volume has outlived at least one restart with recordings still on it. Proven, not assumed. |
+| **Volume attached, not yet proven** (amber) | `/data` is a real mount point. Upload something, redeploy once, and the banner turns green. |
+| **No volume attached** (red) | `/data` is the container's temporary disk. Anything uploaded dies with the next deploy. |
+| **Cannot detect the volume** (amber) | Expected when running locally — mount detection reads `/proc`, which only exists on Linux. |
+
+It works by checking `/proc/self/mountinfo` to see whether `DATA_DIR` is its own
+mount point, and by keeping a `firstSeen` timestamp and a boot counter in the
+manifest. If the disk were ephemeral, `firstSeen` would reset on every deploy and
+the counter would never climb — so a high boot count with an old `firstSeen` is
+proof the data survived. The server logs the same verdict at startup.
+
+**To prove it end to end:** upload one recording, redeploy from the Railway
+dashboard, then reload `/admin`. Green banner and the recording still listed means
+you're safe.
+
+Railway specifics worth knowing: one volume per service, absolute mount paths
+only, and volumes are incompatible with multiple replicas. Volumes are mounted at
+container start rather than build time, so nothing baked into the image at `/data`
+would survive anyway. Size caps are 0.5 GB on Trial, 5 GB on Hobby — voice
+messages are a rounding error against either. Redeploying a service with a volume
+causes a few seconds of downtime, because Railway won't let two deployments mount
+the same volume at once.
 
 ## Running locally
 

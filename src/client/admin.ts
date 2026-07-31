@@ -18,7 +18,20 @@ interface AdminRecording {
   active: boolean;
 }
 
+interface StorageStatus {
+  dataDir: string;
+  writable: boolean;
+  mounted: boolean | null;
+  firstSeen: string | null;
+  bootedAt: string;
+  boots: number;
+  recordings: number;
+  bytes: number;
+  proven: boolean;
+}
+
 interface AdminState {
+  storage?: StorageStatus;
   recordings: AdminRecording[];
   collectibleCount: number | null;
   effectiveCount: number;
@@ -98,7 +111,79 @@ function formatSize(bytes: number): string {
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Say plainly whether the recordings will survive the next deploy. Guessing is
+ * the one thing you cannot afford here: you find out you were wrong only after
+ * the files are already gone.
+ */
+function renderStorage(s: StorageStatus | undefined) {
+  const el = $("storage");
+  if (!s) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const parts: string[] = [];
+  let tone: "good" | "warn" | "bad";
+  let headline: string;
+
+  if (!s.writable) {
+    tone = "bad";
+    headline = "Storage is not writable — uploads will fail";
+    parts.push(`Nothing can be saved to <code>${s.dataDir}</code>.`);
+  } else if (s.mounted === false) {
+    tone = "bad";
+    headline = "No volume attached — recordings will be lost on the next deploy";
+    parts.push(
+      `<code>${s.dataDir}</code> is the container's temporary disk, not a volume.`,
+      `Attach a Railway volume with the mount path <code>${s.dataDir}</code>, then re-upload.`,
+    );
+  } else if (s.proven) {
+    tone = "good";
+    headline = "Persistent storage confirmed";
+    parts.push(
+      `<code>${s.dataDir}</code> has survived <strong>${s.boots - 1} restart${
+        s.boots - 1 === 1 ? "" : "s"
+      }</strong> with the recordings intact.`,
+      s.firstSeen ? `In use since ${formatDate(s.firstSeen)}.` : "",
+    );
+  } else if (s.mounted === true) {
+    tone = "warn";
+    headline = "Volume attached, not yet proven";
+    parts.push(
+      `<code>${s.dataDir}</code> is a mounted volume, which is what you want.`,
+      s.recordings === 0
+        ? "Upload a recording, then redeploy — this box will confirm it survived."
+        : "Redeploy once and come back here; this box will confirm the files survived.",
+    );
+  } else {
+    tone = "warn";
+    headline = "Cannot detect the volume from here";
+    parts.push(
+      `Writing to <code>${s.dataDir}</code>. Mount detection only works on Linux, so this is expected locally.`,
+    );
+  }
+
+  el.className = `storage ${tone}`;
+  el.innerHTML = `
+    <strong>${headline}</strong>
+    <p>${parts.filter(Boolean).join(" ")}</p>
+    <small>boot #${s.boots} · ${s.recordings} file${s.recordings === 1 ? "" : "s"} · ${formatSize(
+      s.bytes,
+    )}</small>`;
+}
+
 function render(state: AdminState) {
+  renderStorage(state.storage);
   const n = state.recordings.length;
   $("summary").textContent =
     n === 0

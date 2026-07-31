@@ -5,13 +5,17 @@
  * JSON manifest plus the audio files themselves. No database needed.
  */
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { access, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { join, resolve } from "node:path";
 import { MAX_COLLECTIBLES } from "../game/treasures.ts";
 
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const AUDIO_DIR = join(DATA_DIR, "audio");
 const MANIFEST = join(DATA_DIR, "manifest.json");
+
+/** When this process started — compared against the manifest to prove persistence. */
+const BOOTED_AT = new Date().toISOString();
 
 export interface Recording {
   id: string;
@@ -35,6 +39,10 @@ export interface Manifest {
   collectibleCount: number | null;
   /** Shown on the start screen. */
   playerName: string;
+  /** First time this storage was ever written. Resets if the disk is ephemeral. */
+  firstSeen?: string;
+  /** How many times the server has started against this storage. */
+  boots?: number;
 }
 
 const DEFAULTS: Manifest = {
@@ -138,4 +146,78 @@ export async function renameRecording(
 
 export function audioPath(rec: Recording): string {
   return join(AUDIO_DIR, rec.file);
+}
+
+/* ─────────────────────── is the disk actually persistent? ─────────────────────── */
+
+export interface StorageStatus {
+  dataDir: string;
+  writable: boolean;
+  /** True when DATA_DIR is its own mount point. null when we cannot tell. */
+  mounted: boolean | null;
+  /** First write ever seen here. If this keeps changing, the disk is ephemeral. */
+  firstSeen: string | null;
+  bootedAt: string;
+  boots: number;
+  recordings: number;
+  bytes: number;
+  /** The disk has outlived at least one restart with recordings still on it. */
+  proven: boolean;
+}
+
+/**
+ * Whether `dir` is a mount point of its own, which on Railway means a volume is
+ * attached there rather than it being part of the container's throwaway layer.
+ */
+async function isMountPoint(dir: string): Promise<boolean | null> {
+  try {
+    const target = await realpath(dir);
+    const raw = await readFile("/proc/self/mountinfo", "utf8");
+    for (const line of raw.split("\n")) {
+      // field 5 of each mountinfo line is the mount point
+      const point = line.split(" ")[4];
+      if (point && point.replace(/\\040/g, " ") === target) return true;
+    }
+    return false;
+  } catch {
+    return null; // no /proc — running on macOS, most likely
+  }
+}
+
+/** Stamp this start-up into the manifest so persistence becomes measurable. */
+export async function recordBoot(): Promise<Manifest> {
+  return update((m) => ({
+    ...m,
+    firstSeen: m.firstSeen ?? BOOTED_AT,
+    boots: (m.boots ?? 0) + 1,
+  }));
+}
+
+export async function storageStatus(): Promise<StorageStatus> {
+  const m = await readManifest();
+  const dir = resolve(DATA_DIR);
+
+  let writable = false;
+  try {
+    await access(dir, constants.W_OK);
+    writable = true;
+  } catch {
+    /* left false */
+  }
+
+  const boots = m.boots ?? 0;
+  const bytes = m.recordings.reduce((sum, r) => sum + r.size, 0);
+
+  return {
+    dataDir: dir,
+    writable,
+    mounted: await isMountPoint(dir),
+    firstSeen: m.firstSeen ?? null,
+    bootedAt: BOOTED_AT,
+    boots,
+    recordings: m.recordings.length,
+    bytes,
+    // outlived a restart, and still holding files
+    proven: boots > 1 && m.firstSeen !== BOOTED_AT && m.recordings.length > 0,
+  };
 }

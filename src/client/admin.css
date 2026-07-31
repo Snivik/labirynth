@@ -104,6 +104,68 @@ body.admin {
   background: rgba(255, 255, 255, 0.14);
 }
 
+/* persistence banner — the one thing you must not have to guess about */
+.storage {
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  border: 2px solid;
+  line-height: 1.5;
+}
+
+.storage:empty {
+  display: none;
+}
+
+/* direct child only — a <strong> inside the sentence must stay inline */
+.storage > strong {
+  display: block;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.storage p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.storage small {
+  display: block;
+  margin-top: 7px;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.storage code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.storage.good {
+  background: rgba(61, 143, 78, 0.16);
+  border-color: #3d8f4e;
+  color: #bfe6c6;
+}
+
+.storage.warn {
+  background: rgba(242, 201, 63, 0.14);
+  border-color: #c9a94e;
+  color: #f2e3b4;
+}
+
+.storage.bad {
+  background: rgba(200, 56, 46, 0.18);
+  border-color: #c8382e;
+  color: #f6cdc8;
+}
+
 .card-block {
   background: linear-gradient(#f8f2df, var(--parchment-deep));
   color: var(--ink);

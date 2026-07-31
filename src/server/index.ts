@@ -19,9 +19,12 @@ import {
   deleteRecording,
   effectiveCount,
   readManifest,
+  recordBoot,
   renameRecording,
+  storageStatus,
   update,
   type Manifest,
+  type StorageStatus,
 } from "./store.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -119,8 +122,9 @@ async function handleAudio(req: Request, id: string): Promise<Response> {
   return new Response(file, { headers: { ...headers, "content-length": String(size) } });
 }
 
-function adminView(m: Manifest) {
+function adminView(m: Manifest, storage?: StorageStatus) {
   return {
+    storage,
     recordings: m.recordings.map((rec, i) => ({
       id: rec.id,
       name: rec.name,
@@ -180,7 +184,8 @@ const server = Bun.serve({
 
     "/api/admin/state": {
       GET: async (req) =>
-        requireAuth(req) ?? json(adminView(await readManifest())),
+        requireAuth(req) ??
+        json(adminView(await readManifest(), await storageStatus())),
     },
 
     "/api/admin/settings": {
@@ -262,8 +267,28 @@ const server = Bun.serve({
   },
 });
 
-const m = await readManifest();
+const m = await recordBoot();
+const storage = await storageStatus();
+
 console.log(`🏰  Labyrinth listening on http://localhost:${server.port}`);
 console.log(`    recordings: ${m.recordings.length}  ·  collectibles: ${effectiveCount(m)}`);
+console.log(
+  `    storage: ${storage.dataDir}  ·  ${
+    storage.mounted === true
+      ? "on a mounted volume"
+      : storage.mounted === false
+        ? "NOT a mount point"
+        : "mount state unknown"
+  }  ·  boot #${storage.boots}`,
+);
+
+if (storage.mounted === false && process.env.NODE_ENV === "production") {
+  console.warn(
+    `⚠  ${storage.dataDir} is not a mounted volume — recordings uploaded here will be\n` +
+      "   destroyed by the next deploy. Attach a Railway volume at this exact path.",
+  );
+}
+if (!storage.writable)
+  console.error(`✖  ${storage.dataDir} is not writable — uploads will fail.`);
 if (!passwordConfigured)
   console.warn("⚠  ADMIN_PASSWORD is not set — /admin is locked until you set it.");
