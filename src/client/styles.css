@@ -60,8 +60,12 @@ button {
 .screen {
   min-height: 100vh;
   display: grid;
-  place-items: center;
-  padding: 32px 20px;
+  justify-items: center;
+  /* centred when it fits; top-aligned when it doesn't, so a short window can
+     scroll to the whole panel instead of clipping its top off */
+  align-items: start;
+  align-items: safe center;
+  padding: 28px 20px;
 }
 
 .scroll-panel {
@@ -115,6 +119,59 @@ button {
 
 .blurb li {
   margin-bottom: 6px;
+}
+
+.short-rules {
+  margin: 12px 0 0;
+  font-style: italic;
+  color: #6b4a24;
+}
+
+/* full rules, folded away — she has played this game for years */
+.rules {
+  margin-top: 14px;
+  border-top: 1px solid rgba(107, 74, 36, 0.22);
+  padding-top: 10px;
+}
+
+.rules > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8a6a2a;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.rules > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rules > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 6px solid currentColor;
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+  transition: transform 0.18s ease;
+}
+
+.rules[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+@media (hover: hover) {
+  .rules > summary:hover {
+    color: var(--navy);
+  }
+}
+
+.rules ol {
+  font-size: 0.92rem;
 }
 
 .pawn-choice {
@@ -1082,7 +1139,9 @@ button {
   /* start screen */
   .screen {
     padding: 14px 10px calc(14px + env(safe-area-inset-bottom));
-    place-items: start center;
+    justify-items: center;
+    align-items: start;
+    align-items: safe center;
     min-height: 100dvh;
   }
 
