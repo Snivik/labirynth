@@ -216,8 +216,13 @@ function render(state: AdminState) {
       <div class="num">${i + 1}</div>
       <div class="rec-main">
         <strong></strong>
-        <small><span class="kind ${rec.kind}">${isVideo ? "video" : "audio"}</span>
-          ${formatSize(rec.size)} · ${rec.mime}</small>
+        <div class="rec-meta">
+          <span class="kind-toggle" role="group" aria-label="Play this message as">
+            <button data-kind="audio" aria-pressed="${!isVideo}">Audio</button>
+            <button data-kind="video" aria-pressed="${isVideo}">Video</button>
+          </span>
+          <small>${formatSize(rec.size)} · ${rec.mime}</small>
+        </div>
         <div class="treasure">
           ${treasure ? iconSVG(treasure.icon) : ""}
           ${
@@ -228,9 +233,6 @@ function render(state: AdminState) {
         </div>
       </div>
       <div class="rec-actions">
-        <button data-act="kind" title="Play this as ${isVideo ? "audio only" : "a video"}">
-          Play as ${isVideo ? "audio" : "video"}
-        </button>
         <button data-act="rename">Rename</button>
         <button data-act="delete" class="danger">Delete</button>
       </div>
@@ -264,18 +266,19 @@ function render(state: AdminState) {
       },
     );
 
-    li.querySelector<HTMLButtonElement>('[data-act="kind"]')!.addEventListener(
-      "click",
-      async () => {
+    li.querySelectorAll<HTMLButtonElement>(".kind-toggle button").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const kind = button.dataset.kind as "audio" | "video";
+        if (kind === rec.kind) return; // already the active half
         render(
           await api<AdminState>(`/api/admin/recordings/${rec.id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ kind: isVideo ? "audio" : "video" }),
+            body: JSON.stringify({ kind }),
           }),
         );
-      },
-    );
+      });
+    });
 
     li.querySelector<HTMLButtonElement>('[data-act="delete"]')!.addEventListener(
       "click",

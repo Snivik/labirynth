@@ -286,27 +286,48 @@ body.admin {
   border: 1px solid #b99a48;
 }
 
-.kind {
-  display: inline-block;
-  margin-right: 5px;
-  padding: 1px 7px;
+.rec-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
+/* Shows what the message IS and lets you change it in one control, so there is
+   no button whose label contradicts the badge beside it. */
+.kind-toggle {
+  display: inline-flex;
+  border: 1px solid #b99a48;
   border-radius: 20px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.kind-toggle button {
+  border: none;
+  background: none;
+  padding: 3px 11px;
+  font: inherit;
   font-size: 0.68rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  vertical-align: 1px;
+  color: #8a6a2a;
 }
 
-.kind.audio {
-  background: rgba(28, 47, 116, 0.14);
+.kind-toggle button + button {
+  border-left: 1px solid #d3bd85;
+}
+
+.kind-toggle button[aria-pressed="true"] {
+  background: var(--navy);
+  color: #ffe9a8;
+  cursor: default;
+}
+
+.kind-toggle button[aria-pressed="false"]:hover {
+  background: rgba(28, 47, 116, 0.12);
   color: var(--navy);
-  border: 1px solid rgba(28, 47, 116, 0.4);
-}
-
-.kind.video {
-  background: rgba(125, 58, 46, 0.14);
-  color: #7d3a2e;
-  border: 1px solid rgba(125, 58, 46, 0.45);
 }
 
 .rec-actions {
