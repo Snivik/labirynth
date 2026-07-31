@@ -778,12 +778,19 @@ button {
   position: fixed;
   inset: 0;
   z-index: 50;
+  overflow-y: auto;
   display: grid;
   place-items: center;
   padding: 24px;
   background: rgba(10, 6, 4, 0.82);
   backdrop-filter: blur(3px);
   animation: fade-in 0.28s ease both;
+}
+
+/* the message player doubles as a replay window opened from the finale's
+   gallery, so it has to sit above the finale rather than behind it */
+#reveal-scrim {
+  z-index: 55;
 }
 
 .reveal {
@@ -873,6 +880,49 @@ button {
   width: 100%;
   margin: 20px 0 18px;
   border-radius: 30px;
+}
+
+.reveal-video {
+  display: block;
+  width: 100%;
+  max-height: 46vh;
+  margin: 18px 0 16px;
+  border-radius: 10px;
+  background: #120c08;
+  border: 2px solid #c9a94e;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* shown only when the browser cannot decode the file */
+.media-error {
+  margin: 14px 0 16px;
+  padding: 11px 14px;
+  border-radius: 8px;
+  background: rgba(200, 56, 46, 0.1);
+  border: 1px solid #c8382e;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #7d2b22;
+}
+
+.media-error a {
+  color: var(--navy);
+  font-weight: 600;
+}
+
+/* marks a gallery entry as a video rather than a voice memo */
+.gallery-item .badge {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-style: normal;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--navy);
+  color: #ffe9a8;
 }
 
 .reveal .demo-note {

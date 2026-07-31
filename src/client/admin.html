@@ -52,8 +52,14 @@
             </label>
           </div>
           <label class="field">
-            <span>Audio file <em>(mp3, m4a, wav, ogg, webm — up to 25 MB)</em></span>
-            <input type="file" id="up-file" accept="audio/*,video/mp4,.m4a,.opus" required />
+            <span>Audio or video
+              <em>(mp3, m4a, wav, ogg, mp4, mov — up to 120 MB)</em></span>
+            <input
+              type="file"
+              id="up-file"
+              accept="audio/*,video/*,.m4a,.opus,.mov,.mp4"
+              required
+            />
           </label>
           <p class="err" id="upload-error" hidden></p>
           <button class="btn gold" type="submit" id="upload-btn">Upload</button>

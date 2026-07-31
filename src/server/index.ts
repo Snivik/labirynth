@@ -20,15 +20,17 @@ import {
   effectiveCount,
   readManifest,
   recordBoot,
-  renameRecording,
   storageStatus,
   update,
+  updateRecording,
   type Manifest,
+  type MediaKind,
   type StorageStatus,
 } from "./store.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
-const MAX_UPLOAD = 25 * 1024 * 1024;
+/** Generous enough for a phone video; a voice memo is a rounding error. */
+const MAX_UPLOAD = 120 * 1024 * 1024;
 
 const EXT_BY_MIME: Record<string, string> = {
   "audio/mpeg": ".mp3",
@@ -42,8 +44,12 @@ const EXT_BY_MIME: Record<string, string> = {
   "audio/ogg": ".ogg",
   "audio/opus": ".opus",
   "audio/flac": ".flac",
-  "video/mp4": ".m4a",
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov", // what an iPhone sends
+  "video/x-m4v": ".m4v",
   "video/webm": ".webm",
+  "video/ogg": ".ogv",
+  "video/3gpp": ".3gp",
 };
 
 const json = (body: unknown, init: ResponseInit = {}) =>
@@ -67,6 +73,8 @@ async function handleGameConfig(): Promise<Response> {
         name: `Demo message ${i + 1}`,
         relation: "no recording uploaded yet",
         audioUrl: null,
+        kind: "audio" as MediaKind,
+        mime: "",
       })),
     });
   }
@@ -80,6 +88,8 @@ async function handleGameConfig(): Promise<Response> {
       name: rec.name,
       relation: rec.relation,
       audioUrl: `/api/audio/${rec.id}`,
+      kind: rec.kind,
+      mime: rec.mime,
     })),
   });
 }
@@ -131,6 +141,7 @@ function adminView(m: Manifest, storage?: StorageStatus) {
       relation: rec.relation,
       size: rec.size,
       mime: rec.mime,
+      kind: rec.kind,
       createdAt: rec.createdAt,
       audioUrl: `/api/audio/${rec.id}`,
       treasureId: ASSIGNMENT_ORDER[i] ?? null,
@@ -151,6 +162,8 @@ const server = Bun.serve({
   port: PORT,
   hostname: "0.0.0.0",
   idleTimeout: 60,
+  // headroom over MAX_UPLOAD for multipart overhead
+  maxRequestBodySize: MAX_UPLOAD + 16 * 1024 * 1024,
   development: process.env.NODE_ENV !== "production",
 
   routes: {
@@ -226,13 +239,19 @@ const server = Bun.serve({
         if (!name) return json({ error: "who recorded it?" }, { status: 400 });
         if (file.size === 0) return json({ error: "that file is empty" }, { status: 400 });
         if (file.size > MAX_UPLOAD)
-          return json({ error: "file is larger than 25 MB" }, { status: 413 });
+          return json(
+            { error: `file is larger than ${MAX_UPLOAD / 1024 / 1024} MB` },
+            { status: 413 },
+          );
 
         const mime = file.type || "audio/mpeg";
         const dotted = file.name.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase();
         const ext = EXT_BY_MIME[mime] ?? dotted ?? ".bin";
         if (!mime.startsWith("audio/") && !mime.startsWith("video/") && !EXT_BY_MIME[mime])
-          return json({ error: `${mime || "that file"} is not audio` }, { status: 415 });
+          return json(
+            { error: `${mime || "that file"} is neither audio nor video` },
+            { status: 415 },
+          );
 
         await addRecording({ name, relation, mime, ext, bytes: await file.arrayBuffer() });
         return json(adminView(await readManifest()), { status: 201 });
@@ -247,8 +266,10 @@ const server = Bun.serve({
         const body = (await req.json().catch(() => ({}))) as {
           name?: string;
           relation?: string;
+          kind?: MediaKind;
         };
-        if (!(await renameRecording(id, body)))
+        const kind = body.kind === "audio" || body.kind === "video" ? body.kind : undefined;
+        if (!(await updateRecording(id, { ...body, kind })))
           return json({ error: "not found" }, { status: 404 });
         return json(adminView(await readManifest()));
       },

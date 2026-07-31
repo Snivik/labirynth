@@ -61,8 +61,30 @@ Everything happens at **`/admin`**, behind the `ADMIN_PASSWORD` you set.
    ("her sister"), pick the audio file, upload.
 3. Optionally set her name — it appears on the title screen and the ending.
 
-Accepts mp3, m4a (iPhone voice memos), wav, ogg, webm, opus, flac, up to 25 MB
-each. Files are stored on the Railway volume, not in git.
+Files are stored on the Railway volume, not in git.
+
+### Audio or video
+
+Both work, and you don't have to say which is which — the browser reports the
+file's MIME type on upload and the server derives it. A voice memo unlocks as an
+audio player; a video unlocks as a video framed in the parchment card, and gets a
+small ▶ badge in the message gallery so it's obvious which is which.
+
+If a file ever reports itself wrongly, each row in the console has a **Play as
+video / Play as audio** button to override the guess.
+
+| | |
+|---|---|
+| Audio | mp3, m4a, wav, ogg, webm, opus, flac, aac |
+| Video | mp4, mov (what an iPhone sends), m4v, webm, ogv, 3gp |
+| Size cap | 120 MB per file |
+
+**One thing to watch with iPhone video.** Recent iPhones record `.mov` in HEVC,
+which Safari plays but Chrome and Firefox often can't. If that happens the player
+doesn't just sit there dead — it says so and offers the file to open in a new tab
+or download. Still, if a video message matters, test it in whatever browser she'll
+actually use, and if it fails, re-export it as H.264 mp4 (in QuickTime: *File →
+Export As → 1080p*, or send it through any "convert to mp4" tool) and re-upload.
 
 ### How many collectibles
 
@@ -140,7 +162,9 @@ Railway specifics worth knowing: one volume per service, absolute mount paths
 only, and volumes are incompatible with multiple replicas. Volumes are mounted at
 container start rather than build time, so nothing baked into the image at `/data`
 would survive anyway. Size caps are 0.5 GB on Trial, 5 GB on Hobby — voice
-messages are a rounding error against either. Redeploying a service with a volume
+messages are a rounding error against either, though a handful of phone videos at
+100 MB apiece would start to matter on Trial. The banner in the console shows the
+running total. Redeploying a service with a volume
 causes a few seconds of downtime, because Railway won't let two deployments mount
 the same volume at once.
 

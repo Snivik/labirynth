@@ -277,6 +277,38 @@ body.admin {
   height: 34px;
 }
 
+.rec .rec-preview {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-height: 260px;
+  border-radius: 8px;
+  background: #120c08;
+  border: 1px solid #b99a48;
+}
+
+.kind {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.kind.audio {
+  background: rgba(28, 47, 116, 0.14);
+  color: var(--navy);
+  border: 1px solid rgba(28, 47, 116, 0.4);
+}
+
+.kind.video {
+  background: rgba(125, 58, 46, 0.14);
+  color: #7d3a2e;
+  border: 1px solid rgba(125, 58, 46, 0.45);
+}
+
 .rec-actions {
   display: flex;
   gap: 6px;

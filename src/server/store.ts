@@ -17,6 +17,9 @@ const MANIFEST = join(DATA_DIR, "manifest.json");
 /** When this process started — compared against the manifest to prove persistence. */
 const BOOTED_AT = new Date().toISOString();
 
+/** Whether the message plays as sound only or shows a picture too. */
+export type MediaKind = "audio" | "video";
+
 export interface Recording {
   id: string;
   /** Who recorded it — shown when the treasure is unlocked. */
@@ -28,6 +31,20 @@ export interface Recording {
   mime: string;
   size: number;
   createdAt: string;
+  /**
+   * Derived from the upload's MIME type, overridable from the console for the
+   * odd file that reports itself wrongly.
+   */
+  kind: MediaKind;
+}
+
+const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv", ".3gp"]);
+
+/** Decide audio vs video from what the browser told us, falling back to the extension. */
+export function kindFor(mime: string, ext: string): MediaKind {
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  return VIDEO_EXTENSIONS.has(ext.toLowerCase()) ? "video" : "audio";
 }
 
 export interface Manifest {
@@ -66,7 +83,12 @@ export async function readManifest(): Promise<Manifest> {
     cache = {
       ...DEFAULTS,
       ...parsed,
-      recordings: (parsed.recordings ?? []).map((r) => ({ ...r, relation: r.relation ?? "" })),
+      // `kind` arrived after the first recordings did — infer it for those
+      recordings: (parsed.recordings ?? []).map((r) => ({
+        ...r,
+        relation: r.relation ?? "",
+        kind: r.kind ?? kindFor(r.mime ?? "", r.file?.match(/\.[a-z0-9]+$/i)?.[0] ?? ""),
+      })),
     };
   } catch {
     cache = { ...DEFAULTS };
@@ -110,6 +132,7 @@ export async function addRecording(
     mime: input.mime,
     size: input.bytes.byteLength,
     createdAt: new Date().toISOString(),
+    kind: kindFor(input.mime, input.ext),
   };
   await update((m) => ({ ...m, recordings: [...m.recordings, rec] }));
   return rec;
@@ -124,9 +147,9 @@ export async function deleteRecording(id: string): Promise<boolean> {
   return true;
 }
 
-export async function renameRecording(
+export async function updateRecording(
   id: string,
-  patch: { name?: string; relation?: string },
+  patch: { name?: string; relation?: string; kind?: MediaKind },
 ): Promise<boolean> {
   let found = false;
   await update((m) => ({
@@ -138,6 +161,7 @@ export async function renameRecording(
         ...r,
         name: patch.name?.trim() || r.name,
         relation: patch.relation !== undefined ? patch.relation.trim() : r.relation,
+        kind: patch.kind ?? r.kind,
       };
     }),
   }));

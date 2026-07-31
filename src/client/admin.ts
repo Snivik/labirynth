@@ -11,6 +11,7 @@ interface AdminRecording {
   relation: string;
   size: number;
   mime: string;
+  kind: "audio" | "video";
   createdAt: string;
   audioUrl: string;
   treasureId: string | null;
@@ -209,11 +210,14 @@ function render(state: AdminState) {
     li.className = `rec${rec.active ? "" : " inactive"}`;
     const treasure = rec.treasureId ? treasureById(rec.treasureId) : undefined;
 
+    const isVideo = rec.kind === "video";
+
     li.innerHTML = `
       <div class="num">${i + 1}</div>
       <div class="rec-main">
         <strong></strong>
-        <small>${formatSize(rec.size)} · ${rec.mime}</small>
+        <small><span class="kind ${rec.kind}">${isVideo ? "video" : "audio"}</span>
+          ${formatSize(rec.size)} · ${rec.mime}</small>
         <div class="treasure">
           ${treasure ? iconSVG(treasure.icon) : ""}
           ${
@@ -224,10 +228,19 @@ function render(state: AdminState) {
         </div>
       </div>
       <div class="rec-actions">
+        <button data-act="kind" title="Play this as ${isVideo ? "audio only" : "a video"}">
+          Play as ${isVideo ? "audio" : "video"}
+        </button>
         <button data-act="rename">Rename</button>
         <button data-act="delete" class="danger">Delete</button>
       </div>
-      <audio controls preload="none" src="${rec.audioUrl}"></audio>
+      ${
+        isVideo
+          // preload="none" so a page of phone videos doesn't fetch and decode
+          // hundreds of megabytes just to sit there
+          ? `<video class="rec-preview" controls preload="none" playsinline src="${rec.audioUrl}"></video>`
+          : `<audio controls preload="none" src="${rec.audioUrl}"></audio>`
+      }
     `;
 
     // textContent, so a name with an apostrophe or angle bracket can't break out
@@ -246,6 +259,19 @@ function render(state: AdminState) {
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ name, relation }),
+          }),
+        );
+      },
+    );
+
+    li.querySelector<HTMLButtonElement>('[data-act="kind"]')!.addEventListener(
+      "click",
+      async () => {
+        render(
+          await api<AdminState>(`/api/admin/recordings/${rec.id}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ kind: isVideo ? "audio" : "video" }),
           }),
         );
       },

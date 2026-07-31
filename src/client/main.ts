@@ -49,6 +49,8 @@ interface Collectible {
   name: string;
   relation: string;
   audioUrl: string | null;
+  kind: "audio" | "video";
+  mime: string;
 }
 
 interface GameConfig {
@@ -537,6 +539,54 @@ function releasePawnJump() {
 
 /* ─────────────────────────── reveal ─────────────────────────── */
 
+/**
+ * The player for one message. A video gets a <video>, a voice memo an <audio>;
+ * either way, if the browser can't decode the file we say so and offer the file
+ * directly rather than leaving her staring at a dead player.
+ */
+function mediaMarkup(person: Collectible): string {
+  if (!person.audioUrl) {
+    return `<p class="demo-note">Demo mode — a placeholder chime plays instead of a recording.</p>`;
+  }
+  const source = person.mime
+    ? `<source src="${person.audioUrl}" type="${escapeHtml(person.mime)}" />`
+    : `<source src="${person.audioUrl}" />`;
+
+  return person.kind === "video"
+    ? `<video id="reveal-media" class="reveal-video" controls autoplay playsinline
+              preload="auto" src="${person.audioUrl}">${source}</video>
+       <p class="media-error" id="media-error" hidden></p>`
+    : `<audio id="reveal-media" controls autoplay preload="auto" src="${person.audioUrl}"></audio>
+       <p class="media-error" id="media-error" hidden></p>`;
+}
+
+/** Wire up playback and the decode-failure fallback. Returns the element, if any. */
+function startMedia(person: Collectible | undefined): HTMLMediaElement | null {
+  const media = document.getElementById("reveal-media") as HTMLMediaElement | null;
+  if (!media) {
+    void playDemoMessage();
+    return null;
+  }
+
+  media.addEventListener("error", () => {
+    const note = document.getElementById("media-error");
+    if (!note || !person?.audioUrl) return;
+    note.hidden = false;
+    note.innerHTML =
+      `This browser can't play ${escapeHtml(person.name)}'s ` +
+      `${person.kind === "video" ? "video" : "recording"} — iPhone videos are often ` +
+      `saved in a format only Safari understands. ` +
+      `<a href="${person.audioUrl}" target="_blank" rel="noopener">Open it in a new tab</a> ` +
+      `or <a href="${person.audioUrl}" download>download it</a>.`;
+    media.hidden = true;
+  });
+
+  media.play().catch(() => {
+    /* autoplay declined — the controls are right there */
+  });
+  return media;
+}
+
 function showReveal(treasureId: string): Promise<void> {
   const treasure = treasureById(treasureId);
   const person = byTreasure.get(treasureId);
@@ -550,36 +600,52 @@ function showReveal(treasureId: string): Promise<void> {
     <p class="from">A birthday message from</p>
     <p class="who">${escapeHtml(person?.name ?? "someone who loves you")}</p>
     ${person?.relation ? `<p class="relation">${escapeHtml(person.relation)}</p>` : ""}
-    ${
-      person?.audioUrl
-        ? `<audio id="reveal-audio" controls autoplay preload="auto" src="${person.audioUrl}"></audio>`
-        : `<p class="demo-note">Demo mode — a placeholder chime plays instead of a recording.</p>`
-    }
+    ${person ? mediaMarkup(person) : ""}
     <button class="btn gold" id="reveal-continue">Back to the labyrinth</button>
   `;
 
   scrim.hidden = false;
-
-  const audio = document.getElementById("reveal-audio") as HTMLAudioElement | null;
-  if (audio) {
-    audio.play().catch(() => {
-      /* browser declined autoplay; the controls are right there */
-    });
-  } else {
-    void playDemoMessage();
-  }
+  const media = startMedia(person);
 
   return new Promise((resolve) => {
     $("reveal-continue").addEventListener(
       "click",
       () => {
-        audio?.pause();
+        media?.pause();
         scrim.hidden = true;
         resolve();
       },
       { once: true },
     );
   });
+}
+
+/** Replay a message from the gallery, video and all. */
+function replayMessage(treasureId: string) {
+  const person = byTreasure.get(treasureId);
+  const treasure = treasureById(treasureId);
+  if (!person) return;
+
+  const scrim = $("reveal-scrim");
+  const box = $("reveal");
+  box.innerHTML = `
+    <p class="found">${escapeHtml(treasure?.name ?? "Message")}</p>
+    <p class="who">${escapeHtml(person.name)}</p>
+    ${person.relation ? `<p class="relation">${escapeHtml(person.relation)}</p>` : ""}
+    ${mediaMarkup(person)}
+    <button class="btn gold" id="reveal-continue">Close</button>
+  `;
+  scrim.hidden = false;
+  const media = startMedia(person);
+
+  $("reveal-continue").addEventListener(
+    "click",
+    () => {
+      media?.pause();
+      scrim.hidden = true;
+    },
+    { once: true },
+  );
 }
 
 /* ─────────────────────────── gallery + finale ─────────────────────────── */
@@ -591,11 +657,13 @@ function galleryHTML(treasureIds: string[]): string {
     .map((id) => {
       const person = byTreasure.get(id);
       const treasure = treasureById(id);
+      const isVideo = person?.kind === "video";
       return `<button class="gallery-item" data-treasure="${id}">
         ${iconSVG(treasure?.icon ?? "chest")}
         <span>${escapeHtml(person?.name ?? treasure?.name ?? "Message")}
           ${person?.relation ? `<small>${escapeHtml(person.relation)}</small>` : ""}
         </span>
+        ${isVideo ? `<em class="badge" title="video message">▶</em>` : ""}
       </button>`;
     })
     .join("")}</div>`;
@@ -604,12 +672,18 @@ function galleryHTML(treasureIds: string[]): string {
 function wireGallery(root: HTMLElement) {
   root.querySelectorAll<HTMLElement>(".gallery-item").forEach((item) => {
     item.addEventListener("click", () => {
-      const person = byTreasure.get(item.dataset.treasure!);
+      const treasureId = item.dataset.treasure!;
+      const person = byTreasure.get(treasureId);
       root.querySelectorAll(".gallery-item").forEach((el) => el.classList.remove("playing"));
       galleryAudio?.pause();
 
       if (!person?.audioUrl) {
         void playDemoMessage();
+        return;
+      }
+      // a video needs somewhere to actually show a picture
+      if (person.kind === "video") {
+        replayMessage(treasureId);
         return;
       }
       item.classList.add("playing");
