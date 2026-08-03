@@ -56,28 +56,6 @@ export const ALL_TREASURES: Treasure[] = [
   ...TEE_TREASURES,
 ];
 
-export const MAX_COLLECTIBLES = ALL_TREASURES.length;
-
-/**
- * Order in which treasures get handed out to recordings. Fixed and loose
- * treasures alternate, so even a short deck is spread across the whole board
- * instead of clustering in one quarter of it.
- */
-export const ASSIGNMENT_ORDER: string[] = [
-  "chest", "ghost",
-  "crown", "spider",
-  "keys", "dragon",
-  "emerald", "bat",
-  "candelabra", "owl",
-  "ring", "rat",
-  "map", "genie",
-  "sword", "moth",
-  "purse", "beetle",
-  "grimoire", "skull",
-  "dagger", "salamander",
-  "helmet", "bones",
-];
-
 const BY_ID = new Map(ALL_TREASURES.map((t) => [t.id, t]));
 
 export function treasureById(id: string): Treasure | undefined {

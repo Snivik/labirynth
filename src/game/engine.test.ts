@@ -17,28 +17,48 @@ import {
   reachable,
   shift,
 } from "./board.ts";
-import { MOVABLE_SHAPE_COUNTS, openingsOf, type Tile } from "./tiles.ts";
-import { ALL_TREASURES, ASSIGNMENT_ORDER, MAX_COLLECTIBLES } from "./treasures.ts";
+import { MOVABLE_SHAPE_COUNTS, openings, openingsOf, type Tile } from "./tiles.ts";
+import { ALL_TREASURES } from "./treasures.ts";
 import {
+  MAX_PLAYERS,
   applyInsert,
   applyMove,
-  applyOpponentTurn,
-  buildDeck,
   createGame,
-  currentTarget,
+  currentPlayer,
   legalArrows,
+  maxCardsPerPlayer,
   movableCells,
+  passTurn,
+  rotateSpare,
+  targetOf,
   type GameState,
 } from "./engine.ts";
 
 const rng = () => makeRng(12345);
+const TREASURE_COUNT = ALL_TREASURES.length;
+
+const twoPlayer = (cardsPerPlayer = 3, seed = 99) =>
+  createGame({
+    seats: [
+      { id: "a", color: "yellow" },
+      { id: "b", color: "blue" },
+    ],
+    cardsPerPlayer,
+    seed,
+  });
+
+/** Force whose turn it is, so a test can drive one particular player. */
+const asPlayer = (state: GameState, id: string): GameState => ({
+  ...state,
+  current: state.players.findIndex((p) => p.id === id),
+});
 
 describe("tile geometry", () => {
   test("rotating four times returns to the start", () => {
     for (const shape of ["straight", "corner", "tee"] as const) {
-      expect(openingsOf(shape, 0)).toBe(openingsOf(shape, 0));
-      const counts = [0, 1, 2, 3].map((r) => openingsOf(shape, r as 0));
-      expect(new Set(counts).size).toBe(shape === "straight" ? 2 : 4);
+      const masks = [0, 1, 2, 3].map((r) => openingsOf(shape, r as 0));
+      expect(new Set(masks).size).toBe(shape === "straight" ? 2 : 4);
+      expect(openingsOf(shape, 0)).toBe(openingsOf(shape, 4 as 0));
     }
   });
 
@@ -65,8 +85,7 @@ describe("board setup", () => {
     expect(all.length).toBe(50);
     expect(new Set(all.map((t) => t.id)).size).toBe(50);
 
-    const fixed = all.filter((t) => t.fixed);
-    expect(fixed.length).toBe(16);
+    expect(all.filter((t) => t.fixed).length).toBe(16);
     const loose = all.filter((t) => !t.fixed);
     expect(loose.length).toBe(34);
 
@@ -81,8 +100,7 @@ describe("board setup", () => {
   test("all 24 treasures are on the board or in hand, none duplicated", () => {
     const { grid, spare } = createBoard(rng());
     const treasures = [...grid.flat(), spare].map((t) => t.treasure).filter(Boolean);
-    expect(treasures.length).toBe(MAX_COLLECTIBLES);
-    expect(new Set(treasures).size).toBe(MAX_COLLECTIBLES);
+    expect(treasures.length).toBe(TREASURE_COUNT);
     expect(new Set(treasures)).toEqual(new Set(ALL_TREASURES.map((t) => t.id)));
   });
 
@@ -98,18 +116,11 @@ describe("board setup", () => {
 
   test("the four corners are the home squares", () => {
     const { grid } = createBoard(rng());
-    const homes = grid.flat().filter((t) => t.home);
-    expect(homes.length).toBe(4);
+    expect(grid.flat().filter((t) => t.home).length).toBe(MAX_PLAYERS);
     expect(grid[0]![0]!.home).toBe("yellow");
     expect(grid[0]![SIZE - 1]!.home).toBe("red");
     expect(grid[SIZE - 1]![0]!.home).toBe("green");
     expect(grid[SIZE - 1]![SIZE - 1]!.home).toBe("blue");
-  });
-
-  test("assignment order covers every treasure exactly once", () => {
-    expect(ASSIGNMENT_ORDER.length).toBe(MAX_COLLECTIBLES);
-    expect(new Set(ASSIGNMENT_ORDER).size).toBe(MAX_COLLECTIBLES);
-    expect(new Set(ASSIGNMENT_ORDER)).toEqual(new Set(ALL_TREASURES.map((t) => t.id)));
   });
 });
 
@@ -136,7 +147,7 @@ describe("shifting", () => {
     const { grid, spare } = createBoard(rng());
     for (const arrow of ARROWS) {
       const before = grid.flat().map((t) => t.id);
-      const out = shift(grid, spare, arrow, { r: 3, c: 3 });
+      const out = shift(grid, spare, arrow, [{ r: 3, c: 3 }]);
 
       // the ejected tile leaves the board, the spare joins it
       const after = out.grid.flat().map((t) => t.id);
@@ -145,10 +156,8 @@ describe("shifting", () => {
       expect(new Set(after).size).toBe(49);
 
       // every square in the pushed line holds a different tile, nothing else moved
-      const moved = after.filter((id, i) => id !== before[i]);
-      expect(moved.length).toBe(SIZE);
+      expect(after.filter((id, i) => id !== before[i]).length).toBe(SIZE);
 
-      // fixed tiles stayed put
       for (let r = 0; r < SIZE; r++)
         for (let c = 0; c < SIZE; c++)
           if (isFixed(r, c)) expect(out.grid[r]![c]!.id).toBe(grid[r]![c]!.id);
@@ -158,9 +167,9 @@ describe("shifting", () => {
   test("pushing then pushing back restores the board exactly", () => {
     const { grid, spare } = createBoard(rng());
     for (const arrow of ARROWS) {
-      const first = shift(grid, spare, arrow, { r: 3, c: 3 });
+      const first = shift(grid, spare, arrow, [{ r: 3, c: 3 }]);
       const back = arrowById(oppositeArrow(arrow.id))!;
-      const second = shift(first.grid, first.spare, back, first.pawn);
+      const second = shift(first.grid, first.spare, back, first.pawns);
 
       expect(second.grid.flat().map((t) => t.id)).toEqual(grid.flat().map((t) => t.id));
       expect(second.spare.id).toBe(spare.id);
@@ -168,25 +177,35 @@ describe("shifting", () => {
     }
   });
 
-  test("a pawn riding the line moves with it", () => {
+  test("every pawn on the pushed line rides along, and only those", () => {
     const { grid, spare } = createBoard(rng());
-    const out = shift(grid, spare, arrowById("top-3")!, { r: 2, c: 3 });
-    expect(out.pawn).toEqual({ r: 3, c: 3 });
-    expect(out.wrappedPawn).toBeNull();
+    const out = shift(grid, spare, arrowById("top-3")!, [
+      { r: 2, c: 3 },
+      { r: 5, c: 3 },
+      { r: 4, c: 2 },
+    ]);
+    expect(out.pawns).toEqual([
+      { r: 3, c: 3 },
+      { r: 6, c: 3 },
+      { r: 4, c: 2 },
+    ]);
+    expect(out.wrapped).toEqual([]);
   });
 
   test("a pawn pushed off the far edge reappears on the tile just inserted", () => {
     const { grid, spare } = createBoard(rng());
-    const out = shift(grid, spare, arrowById("top-3")!, { r: SIZE - 1, c: 3 });
-    expect(out.wrappedPawn).not.toBeNull();
-    expect(out.pawn).toEqual({ r: 0, c: 3 });
+    const out = shift(grid, spare, arrowById("top-3")!, [{ r: SIZE - 1, c: 3 }]);
+    expect(out.wrapped).toEqual([0]);
+    expect(out.pawns[0]).toEqual({ r: 0, c: 3 });
     expect(out.grid[0]![3]!.id).toBe(spare.id);
   });
 
-  test("a pawn outside the pushed line does not move", () => {
+  test("the inserted tile keeps the rotation it was pushed in with", () => {
     const { grid, spare } = createBoard(rng());
-    const out = shift(grid, spare, arrowById("top-3")!, { r: 4, c: 2 });
-    expect(out.pawn).toEqual({ r: 4, c: 2 });
+    const turned: Tile = { ...spare, rot: ((spare.rot + 1) % 4) as 0 };
+    const out = shift(grid, turned, arrowById("left-1")!, []);
+    expect(out.grid[1]![0]!.rot).toBe(turned.rot);
+    expect(openings(out.grid[1]![0]!)).toBe(openings(turned));
   });
 });
 
@@ -198,8 +217,7 @@ describe("path finding", () => {
 
   test("reachability is symmetric — corridors are two-way", () => {
     const { grid } = createBoard(rng());
-    const from = reachable(grid, { r: 3, c: 3 });
-    for (const cell of from) {
+    for (const cell of reachable(grid, { r: 3, c: 3 })) {
       const [r, c] = cell.split(",").map(Number) as [number, number];
       expect(reachable(grid, { r, c }).has(key(3, 3))).toBe(true);
     }
@@ -218,7 +236,8 @@ describe("path finding", () => {
         expect(path[0]).toEqual([start.r, start.c]);
         expect(path.at(-1)).toEqual([r, c]);
         for (let i = 1; i < path.length; i++) {
-          const d = Math.abs(path[i]![0] - path[i - 1]![0]) + Math.abs(path[i]![1] - path[i - 1]![1]);
+          const d =
+            Math.abs(path[i]![0] - path[i - 1]![0]) + Math.abs(path[i]![1] - path[i - 1]![1]);
           expect(d).toBe(1);
         }
       }
@@ -226,98 +245,136 @@ describe("path finding", () => {
   });
 });
 
-describe("turn structure", () => {
-  const newGame = () =>
-    createGame({ collectibles: ["chest", "ghost", "crown"], pawnColor: "yellow", seed: 99 });
-
-  test("a game starts on its home corner with the first card face up", () => {
-    const game = newGame();
-    expect(game.pawn).toEqual({ r: 0, c: 0 });
-    expect(game.home).toEqual({ r: 0, c: 0 });
-    expect(game.phase).toBe("insert");
-    expect(currentTarget(game)).toEqual({ kind: "treasure", treasureId: "chest" });
-    expect(legalArrows(game).length).toBe(12);
+describe("dealing", () => {
+  test("everyone starts in their own corner with a full stack", () => {
+    const game = twoPlayer(4);
+    expect(game.players.map((p) => p.pawn)).toEqual([
+      { r: 0, c: 0 },
+      { r: SIZE - 1, c: SIZE - 1 },
+    ]);
+    for (const player of game.players) {
+      expect(player.pawn).toEqual(player.home);
+      expect(player.hand.length).toBe(4);
+      expect(player.collected).toEqual([]);
+    }
   });
 
-  test("insertion is required before moving, and moving ends the player's turn", () => {
-    const game = newGame();
-    expect(() => applyMove(game, { r: 0, c: 0 })).toThrow(/cannot move/);
+  test("no two players are dealt the same treasure", () => {
+    const game = createGame({
+      seats: [
+        { id: "a", color: "yellow" },
+        { id: "b", color: "red" },
+        { id: "c", color: "green" },
+        { id: "d", color: "blue" },
+      ],
+      cardsPerPlayer: 6,
+      seed: 7,
+    });
+    const dealt = game.players.flatMap((p) => p.hand);
+    expect(dealt.length).toBe(TREASURE_COUNT);
+    expect(new Set(dealt).size).toBe(TREASURE_COUNT);
+  });
+
+  test("the deal is capped by what 24 treasures can cover", () => {
+    expect(maxCardsPerPlayer(2)).toBe(12);
+    expect(maxCardsPerPlayer(3)).toBe(8);
+    expect(maxCardsPerPlayer(4)).toBe(6);
+    // asking for more than there are hands out the maximum instead of failing
+    const game = twoPlayer(50);
+    expect(game.players[0]!.hand.length).toBe(12);
+  });
+
+  test("a table needs two to four players, each in their own corner", () => {
+    expect(() => createGame({ seats: [{ id: "a", color: "yellow" }], cardsPerPlayer: 3 })).toThrow(
+      /at least 2/,
+    );
+    expect(() =>
+      createGame({
+        seats: [
+          { id: "a", color: "yellow" },
+          { id: "b", color: "yellow" },
+        ],
+        cardsPerPlayer: 3,
+      }),
+    ).toThrow(/share a corner/);
+  });
+});
+
+describe("turn structure", () => {
+  test("a game opens on the insert phase with every arrow available", () => {
+    const game = twoPlayer();
+    expect(game.phase).toBe("insert");
+    expect(game.turn).toBe(1);
+    expect(legalArrows(game).length).toBe(12);
+    expect(targetOf(currentPlayer(game))).toEqual({
+      kind: "treasure",
+      treasureId: currentPlayer(game).hand[0],
+    });
+  });
+
+  test("insertion is required before moving, and moving hands the turn on", () => {
+    const game = twoPlayer();
+    const first = currentPlayer(game).id;
+    expect(() => applyMove(game, currentPlayer(game).pawn)).toThrow(/cannot move/);
 
     const inserted = applyInsert(game, "top-1").state;
     expect(inserted.phase).toBe("move");
-    expect(inserted.pushes).toBe(1);
     expect(() => applyInsert(inserted, "top-3")).toThrow(/cannot insert/);
 
-    const moved = applyMove(inserted, inserted.pawn).state;
-    expect(moved.phase).toBe("opponent");
+    const moved = applyMove(inserted, currentPlayer(inserted).pawn).state;
+    expect(moved.phase).toBe("insert");
+    expect(moved.turn).toBe(2);
+    expect(currentPlayer(moved).id).not.toBe(first);
   });
 
-  test("the arrow that would undo the last push is blocked, for player and opponent alike", () => {
-    let game = newGame();
+  test("the turn goes round the table and comes back", () => {
+    let game = createGame({
+      seats: [
+        { id: "a", color: "yellow" },
+        { id: "b", color: "red" },
+        { id: "c", color: "green" },
+      ],
+      cardsPerPlayer: 2,
+      seed: 3,
+    });
+    const opener = currentPlayer(game).id;
+    const order: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      order.push(currentPlayer(game).id);
+      game = applyInsert(game, i % 2 === 0 ? "top-1" : "left-3").state;
+      game = applyMove(game, currentPlayer(game).pawn).state;
+    }
+    expect(new Set(order).size).toBe(3);
+    expect(currentPlayer(game).id).toBe(opener);
+  });
+
+  test("the arrow that would undo the last push stays blocked for the next player", () => {
+    let game = twoPlayer();
     game = applyInsert(game, "top-1").state;
     expect(game.blockedArrow).toBe("bottom-1");
     expect(legalArrows(game).map((a) => a.id)).not.toContain("bottom-1");
-    expect(() => applyInsert({ ...game, phase: "insert" }, "bottom-1")).toThrow(/undo/);
 
-    game = applyMove(game, game.pawn).state;
-    const opponent = applyOpponentTurn(game, () => 0.5);
-    expect(opponent.arrowId).not.toBe("bottom-1");
-    expect(opponent.state.phase).toBe("insert");
-    expect(opponent.state.turn).toBe(2);
+    game = applyMove(game, currentPlayer(game).pawn).state;
+    // a new player, but the same board — the undo is still forbidden
+    expect(game.blockedArrow).toBe("bottom-1");
+    expect(() => applyInsert(game, "bottom-1")).toThrow(/undo/);
   });
 
-  test("walking onto the current treasure collects it and turns the next card", () => {
-    let game = newGame();
-    game = applyInsert(game, "top-1").state;
-
-    // put the chest under the pawn's feet
-    const [r, c] = [game.pawn.r, game.pawn.c];
-    const grid = game.grid.map((row) => row.slice());
-    grid.forEach((row) => row.forEach((t) => t.treasure === "chest" && delete t.treasure));
-    grid[r]![c] = { ...grid[r]![c]!, treasure: "chest" };
-    game = { ...game, grid };
-
-    const out = applyMove(game, { r, c });
-    expect(out.collected).toBe("chest");
-    expect(out.state.collected).toEqual(["chest"]);
-    expect(out.state.deck).toEqual(["ghost", "crown"]);
-    expect(currentTarget(out.state)).toEqual({ kind: "treasure", treasureId: "ghost" });
-  });
-
-  test("only one treasure can be claimed per turn", () => {
-    let game = newGame();
-    game = applyInsert(game, "top-1").state;
-    const { r, c } = game.pawn;
-    const grid = game.grid.map((row) => row.slice());
-    grid.forEach((row) => row.forEach((t) => delete t.treasure));
-    // both the current card and the next one on the same square
-    grid[r]![c] = { ...grid[r]![c]!, treasure: "chest" };
-    game = { ...game, grid };
-
-    const out = applyMove(game, { r, c });
-    expect(out.collected).toBe("chest");
-    expect(out.state.deck[0]).toBe("ghost");
-    expect(out.won).toBe(false);
-  });
-
-  test("an empty deck sends the player home, and arriving home wins", () => {
-    let game: GameState = {
-      ...newGame(),
-      deck: [],
-      collected: ["chest", "ghost", "crown"],
+  test("a push carries every pawn standing on that line", () => {
+    let game = twoPlayer();
+    game = {
+      ...game,
+      players: game.players.map((p) => ({ ...p, pawn: { r: 2, c: 3 } })),
     };
-    expect(currentTarget(game)).toEqual({ kind: "home" });
-
-    game = applyInsert(game, "top-1").state;
-    // the pawn never left home, so staying put is arriving
-    const out = applyMove(game, { r: 0, c: 0 });
-    expect(out.won).toBe(true);
-    expect(out.state.phase).toBe("won");
-    expect(currentTarget(out.state)).toBeNull();
+    game = applyInsert(game, "top-3").state;
+    expect(game.players.map((p) => p.pawn)).toEqual([
+      { r: 3, c: 3 },
+      { r: 3, c: 3 },
+    ]);
   });
 
   test("walking somewhere with no open corridor is rejected", () => {
-    const game = applyInsert(newGame(), "top-1").state;
+    const game = applyInsert(twoPlayer(), "top-1").state;
     const open = movableCells(game);
     const blocked: { r: number; c: number }[] = [];
     for (let r = 0; r < SIZE; r++)
@@ -327,66 +384,208 @@ describe("turn structure", () => {
     expect(() => applyMove(game, blocked[0]!)).toThrow(/no open path/);
   });
 
-  test("the deck is a shuffle — same treasures, no losses", () => {
-    const ids = ASSIGNMENT_ORDER.slice(0, 10);
-    const deck = buildDeck(ids, 7);
-    expect(deck.length).toBe(ids.length);
-    expect(new Set(deck)).toEqual(new Set(ids));
+  test("a dropped-out player's turn can be handed on without being played", () => {
+    const game = twoPlayer();
+    const skipped = currentPlayer(game).id;
+    const next = passTurn(game);
+    expect(currentPlayer(next).id).not.toBe(skipped);
+    expect(next.phase).toBe("insert");
+    expect(next.turn).toBe(2);
+    // nothing about the board changed
+    expect(next.grid.flat().map((t) => t.id)).toEqual(game.grid.flat().map((t) => t.id));
+    expect(next.spare.id).toBe(game.spare.id);
+  });
+});
+
+describe("turning the spare tile", () => {
+  test("a quarter turn changes the openings, four turns bring it back", () => {
+    const game = twoPlayer();
+    const start = game.spare.rot;
+    const once = rotateSpare(game, 1);
+    expect(once.spare.rot).toBe(((start + 1) % 4) as 0);
+
+    let round = game;
+    for (let i = 0; i < 4; i++) round = rotateSpare(round, 1);
+    expect(round.spare.rot).toBe(start);
+    expect(openings(round.spare)).toBe(openings(game.spare));
+  });
+
+  test("it turns both ways, and the board is untouched until you push", () => {
+    const game = twoPlayer();
+    const back = rotateSpare(game, -1);
+    expect(back.spare.rot).toBe(((game.spare.rot + 3) % 4) as 0);
+    expect(back.grid.flat().map((t) => t.id)).toEqual(game.grid.flat().map((t) => t.id));
+    expect(back.spare.id).toBe(game.spare.id);
+  });
+
+  test("the tile goes into the maze the way you turned it", () => {
+    let game = twoPlayer();
+    game = rotateSpare(game, 1);
+    const wanted = openings(game.spare);
+    const spareId = game.spare.id;
+    game = applyInsert(game, "left-1").state;
+    expect(game.grid[1]![0]!.id).toBe(spareId);
+    expect(openings(game.grid[1]![0]!)).toBe(wanted);
+  });
+
+  test("you cannot turn it once it is in", () => {
+    const moving = applyInsert(twoPlayer(), "top-1").state;
+    expect(() => rotateSpare(moving, 1)).toThrow(/cannot turn/);
+  });
+});
+
+describe("claiming treasures", () => {
+  /** Clear the board of treasures and put one under a given square. */
+  function onlyTreasureAt(state: GameState, cell: { r: number; c: number }, id: string) {
+    const grid: Tile[][] = state.grid.map((row) =>
+      row.map((t) => ({ ...t, treasure: undefined })),
+    );
+    grid[cell.r]![cell.c] = { ...grid[cell.r]![cell.c]!, treasure: id };
+    return { ...state, grid, spare: { ...state.spare, treasure: undefined } };
+  }
+
+  test("landing on the treasure on your card claims it and turns the next", () => {
+    let game = applyInsert(twoPlayer(), "top-1").state;
+    const player = currentPlayer(game);
+    const wanted = player.hand[0]!;
+    const rest = player.hand.slice(1);
+    game = onlyTreasureAt(game, player.pawn, wanted);
+
+    const out = applyMove(game, player.pawn);
+    const after = out.state.players.find((p) => p.id === player.id)!;
+    expect(out.collected).toBe(wanted);
+    expect(after.collected).toEqual([wanted]);
+    expect(after.hand).toEqual(rest);
+    expect(targetOf(after)).toEqual({ kind: "treasure", treasureId: rest[0] });
+  });
+
+  test("somebody else's treasure is just a tile you are standing on", () => {
+    let game = applyInsert(twoPlayer(), "top-1").state;
+    const player = currentPlayer(game);
+    const other = game.players.find((p) => p.id !== player.id)!;
+    game = onlyTreasureAt(game, player.pawn, other.hand[0]!);
+
+    const out = applyMove(game, player.pawn);
+    expect(out.collected).toBeNull();
+    expect(out.state.players.find((p) => p.id === player.id)!.collected).toEqual([]);
+    expect(out.state.players.find((p) => p.id === other.id)!.hand).toEqual(other.hand);
+  });
+
+  test("only one treasure comes off the board per turn", () => {
+    let game = applyInsert(twoPlayer(), "top-1").state;
+    const player = currentPlayer(game);
+    // the current card and the next one on the very same square
+    game = onlyTreasureAt(game, player.pawn, player.hand[0]!);
+    const out = applyMove(game, player.pawn);
+    expect(out.state.players.find((p) => p.id === player.id)!.hand[0]).toBe(player.hand[1]);
+    expect(out.won).toBe(false);
+  });
+
+  test("an empty stack sends you home, and getting there wins the game", () => {
+    const base = twoPlayer();
+    let game: GameState = {
+      ...base,
+      current: 0,
+      players: base.players.map((p, i) =>
+        i === 0 ? { ...p, hand: [], collected: ["chest", "crown"] } : p,
+      ),
+    };
+    expect(targetOf(game.players[0]!)).toEqual({ kind: "home" });
+
+    game = applyInsert(game, "top-1").state;
+    // the pawn never left its corner, so staying put is arriving
+    const out = applyMove(game, game.players[0]!.pawn);
+    expect(out.won).toBe(true);
+    expect(out.state.phase).toBe("over");
+    expect(out.state.winnerId).toBe("a");
+  });
+
+  test("collecting your last treasure does not also count as coming home", () => {
+    const base = asPlayer(applyInsert(twoPlayer(), "top-1").state, "a");
+    const player = base.players.find((p) => p.id === "a")!;
+    // one card left, and it happens to be sitting on the player's own corner
+    const grid: Tile[][] = base.grid.map((row) =>
+      row.map((t) => ({ ...t, treasure: undefined })),
+    );
+    grid[player.home.r]![player.home.c] = {
+      ...grid[player.home.r]![player.home.c]!,
+      treasure: "chest",
+    };
+    const game: GameState = {
+      ...base,
+      grid,
+      players: base.players.map((p) => (p.id === "a" ? { ...p, hand: ["chest"] } : p)),
+    };
+
+    const out = applyMove(game, player.home);
+    expect(out.collected).toBe("chest");
+    expect(out.won).toBe(false);
+    expect(out.state.phase).toBe("insert");
+    // they still have to leave and come back
+    expect(targetOf(out.state.players.find((p) => p.id === "a")!)).toEqual({ kind: "home" });
   });
 });
 
 describe("a full game plays through without breaking", () => {
-  test("300 random turns keep every invariant", () => {
-    const collectibles = buildDeck(ASSIGNMENT_ORDER.slice(0, 8), 4);
-    let game = createGame({ collectibles, pawnColor: "green", seed: 2024 });
+  test("two players race for real and one of them wins", () => {
+    let game = twoPlayer(3, 2024);
     const random = makeRng(777);
-    let collected = 0;
+    const claimed = new Map<string, number>(game.players.map((p) => [p.id, 0]));
+    let turns = 0;
 
-    for (let turn = 0; turn < 300 && game.phase !== "won"; turn++) {
-      // all twelve on the opening turn, eleven once a push can be undone
+    while (game.phase !== "over" && turns < 2000) {
+      turns++;
       const options = legalArrows(game);
-      expect(options.length).toBe(turn === 0 ? 12 : 11);
-      const arrow = options[Math.floor(random() * options.length)]!;
-      game = applyInsert(game, arrow.id).state;
+      expect(options.length).toBe(turns === 1 ? 12 : 11);
+
+      // turn the tile at random too, so rotation is exercised in anger
+      game = rotateSpare(game, Math.floor(random() * 4));
+      game = applyInsert(game, options[Math.floor(random() * options.length)]!.id).state;
 
       // the board is always intact
       const all = [...game.grid.flat(), game.spare];
-      expect(all.length).toBe(50);
       expect(new Set(all.map((t) => t.id)).size).toBe(50);
-      expect(all.map((t) => t.treasure).filter(Boolean).length).toBe(MAX_COLLECTIBLES);
+      expect(all.map((t) => t.treasure).filter(Boolean).length).toBe(TREASURE_COUNT);
 
-      // the pawn is always on the board
-      expect(game.pawn.r).toBeGreaterThanOrEqual(0);
-      expect(game.pawn.r).toBeLessThan(SIZE);
-      expect(game.pawn.c).toBeGreaterThanOrEqual(0);
-      expect(game.pawn.c).toBeLessThan(SIZE);
-
-      // walk to a random reachable square, preferring the target when possible
-      const cells = [...movableCells(game)];
-      const target = currentTarget(game);
-      let destination = cells[Math.floor(random() * cells.length)]!;
-      if (target) {
-        const wanted =
-          target.kind === "home"
-            ? key(game.home.r, game.home.c)
-            : cells.find((cell) => {
-                const [r, c] = cell.split(",").map(Number) as [number, number];
-                return game.grid[r]![c]!.treasure === target.treasureId;
-              });
-        if (wanted && cells.includes(wanted)) destination = wanted;
+      // and every pawn is always on it
+      for (const player of game.players) {
+        expect(player.pawn.r).toBeGreaterThanOrEqual(0);
+        expect(player.pawn.r).toBeLessThan(SIZE);
+        expect(player.pawn.c).toBeGreaterThanOrEqual(0);
+        expect(player.pawn.c).toBeLessThan(SIZE);
       }
+
+      // walk toward the target when it is within reach, otherwise wander
+      const player = currentPlayer(game);
+      const cells = [...movableCells(game)];
+      const target = targetOf(player);
+      const wanted =
+        target.kind === "home"
+          ? key(player.home.r, player.home.c)
+          : cells.find((cell) => {
+              const [r, c] = cell.split(",").map(Number) as [number, number];
+              return game.grid[r]![c]!.treasure === target.treasureId;
+            });
+      const destination =
+        wanted && cells.includes(wanted)
+          ? wanted
+          : cells[Math.floor(random() * cells.length)]!;
       const [dr, dc] = destination.split(",").map(Number) as [number, number];
 
-      const move = applyMove(game, { r: dr, c: dc });
-      game = move.state;
-      if (move.collected) collected++;
-      expect(game.collected.length).toBe(collected);
-
-      if (game.phase === "opponent") game = applyOpponentTurn(game, random).state;
+      const out = applyMove(game, { r: dr, c: dc });
+      game = out.state;
+      if (out.collected) claimed.set(player.id, claimed.get(player.id)! + 1);
+      expect(out.state.players.find((p) => p.id === player.id)!.collected.length).toBe(
+        claimed.get(player.id)!,
+      );
     }
 
-    expect(game.phase).toBe("won");
-    expect(game.collected).toEqual(collectibles);
-    expect(game.pawn).toEqual(game.home);
+    expect(game.phase).toBe("over");
+    const winner = game.players.find((p) => p.id === game.winnerId)!;
+    expect(winner.hand).toEqual([]);
+    expect(winner.collected.length).toBe(3);
+    expect(winner.pawn).toEqual(winner.home);
+    // the loser never got to play past the win
+    expect(game.players.some((p) => p.id !== winner.id && p.hand.length > 0)).toBe(true);
   });
 });

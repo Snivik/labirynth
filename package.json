@@ -1,9 +1,9 @@
 {
-  "name": "labyrinth-birthday",
-  "version": "1.0.0",
+  "name": "labyrinth",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "A birthday edition of Labyrinth — collect the treasures, unlock the voices.",
+  "description": "Labyrinth for two to four players, in a browser, over a websocket.",
   "scripts": {
     "dev": "bun --hot src/server/index.ts",
     "start": "bun src/server/index.ts",

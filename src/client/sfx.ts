@@ -119,28 +119,26 @@ export function playFanfare() {
   }
 }
 
-/** Stand-in "recording" used in demo mode, so the flow can be tested. */
-export function playDemoMessage(): Promise<void> {
-  const c = unlockAudio();
-  if (muted) return Promise.resolve();
-  const melody: [number, number][] = [
-    [391.99, 0],
-    [391.99, 0.22],
-    [440.0, 0.44],
-    [391.99, 0.7],
-    [523.25, 0.96],
-    [493.88, 1.22],
+/**
+ * Two soft notes when the table hands the turn to you — with four people on
+ * four screens, somebody is always looking somewhere else.
+ */
+export function playTurn() {
+  const c = ctx;
+  if (muted || !c) return;
+  const notes: [number, number][] = [
+    [587.33, 0],
+    [880.0, 0.13],
   ];
-  for (const [freq, offset] of melody) {
+  for (const [freq, offset] of notes) {
     const at = c.currentTime + offset;
     const osc = c.createOscillator();
-    osc.type = "square";
+    osc.type = "sine";
     osc.frequency.setValueAtTime(freq, at);
-    const g = gainNode(at, 0.08, 0.24);
-    if (!g) continue;
+    const g = gainNode(at, 0.12, 0.4);
+    if (!g) return;
     osc.connect(g);
     osc.start(at);
-    osc.stop(at + 0.3);
+    osc.stop(at + 0.45);
   }
-  return new Promise((resolve) => setTimeout(resolve, 1700));
 }

@@ -1,315 +1,215 @@
 /**
- * Bun server: serves the game, the hidden upload page, and the audio files.
+ * Bun server: serves the game and runs the rooms over one websocket.
+ *
+ * Nothing is written to disk. A room lives as long as somebody is connected to
+ * it, which is exactly as long as anybody cares about it.
  */
 
-import { stat } from "node:fs/promises";
+import type { ServerWebSocket } from "bun";
 import index from "../client/index.html";
-import admin from "../client/admin.html";
-import { ASSIGNMENT_ORDER, MAX_COLLECTIBLES, treasureById } from "../game/treasures.ts";
+import type { PawnColor } from "../game/board.ts";
 import {
-  checkPassword,
-  clearCookie,
-  isAuthed,
-  passwordConfigured,
-  sessionCookie,
-} from "./auth.ts";
-import {
-  addRecording,
-  audioPath,
-  deleteRecording,
-  effectiveCount,
-  readManifest,
-  recordBoot,
-  storageStatus,
-  update,
-  updateRecording,
-  type Manifest,
-  type MediaKind,
-  type StorageStatus,
-} from "./store.ts";
+  RoomError,
+  again,
+  begin,
+  createRoom,
+  disconnect,
+  getRoom,
+  insert,
+  joinRoom,
+  move,
+  pass,
+  reapIdleRooms,
+  removeSeat,
+  resumeSeat,
+  roomCount,
+  roomView,
+  rotate,
+  setCards,
+  setColor,
+  setName,
+  type Room,
+  type Seat,
+} from "./rooms.ts";
+import type { ClientMessage, GameEvent, ServerMessage } from "../shared/protocol.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
-/** Generous enough for a phone video; a voice memo is a rounding error. */
-const MAX_UPLOAD = 120 * 1024 * 1024;
+/** Nothing legitimate comes close; anything bigger is a client gone wrong. */
+const MAX_MESSAGE = 4096;
 
-const EXT_BY_MIME: Record<string, string> = {
-  "audio/mpeg": ".mp3",
-  "audio/mp3": ".mp3",
-  "audio/mp4": ".m4a",
-  "audio/x-m4a": ".m4a",
-  "audio/aac": ".aac",
-  "audio/wav": ".wav",
-  "audio/x-wav": ".wav",
-  "audio/webm": ".webm",
-  "audio/ogg": ".ogg",
-  "audio/opus": ".opus",
-  "audio/flac": ".flac",
-  "video/mp4": ".mp4",
-  "video/quicktime": ".mov", // what an iPhone sends
-  "video/x-m4v": ".m4v",
-  "video/webm": ".webm",
-  "video/ogg": ".ogv",
-  "video/3gpp": ".3gp",
-};
+interface WsData {
+  code: string | null;
+  seatId: string | null;
+}
+
+type Socket = ServerWebSocket<WsData>;
+
+/** One live socket per seat. A second tab on the same seat displaces the first. */
+const sockets = new Map<string, Socket>();
 
 const json = (body: unknown, init: ResponseInit = {}) =>
   Response.json(body, { headers: { "cache-control": "no-store" }, ...init });
 
-/** Public game configuration: which treasure unlocks whose voice. */
-async function handleGameConfig(): Promise<Response> {
-  const m = await readManifest();
-  const count = effectiveCount(m);
-
-  if (count === 0) {
-    // Nothing uploaded yet — hand back a playable demo so the game can be
-    // tested before the recordings arrive.
-    const demoCount = Math.min(Math.max(m.collectibleCount ?? 6, 1), MAX_COLLECTIBLES);
-    return json({
-      demo: true,
-      playerName: m.playerName,
-      collectibles: ASSIGNMENT_ORDER.slice(0, demoCount).map((treasureId, i) => ({
-        id: `demo-${i}`,
-        treasureId,
-        name: `Demo message ${i + 1}`,
-        relation: "no recording uploaded yet",
-        audioUrl: null,
-        kind: "audio" as MediaKind,
-        mime: "",
-      })),
-    });
-  }
-
-  return json({
-    demo: false,
-    playerName: m.playerName,
-    collectibles: m.recordings.slice(0, count).map((rec, i) => ({
-      id: rec.id,
-      treasureId: ASSIGNMENT_ORDER[i]!,
-      name: rec.name,
-      relation: rec.relation,
-      audioUrl: `/api/audio/${rec.id}`,
-      kind: rec.kind,
-      mime: rec.mime,
-    })),
-  });
+function send(ws: Socket, message: ServerMessage) {
+  ws.send(JSON.stringify(message));
 }
 
-async function handleAudio(req: Request, id: string): Promise<Response> {
-  const m = await readManifest();
-  const rec = m.recordings.find((r) => r.id === id);
-  if (!rec) return new Response("Not found", { status: 404 });
+function broadcast(room: Room, event?: GameEvent) {
+  for (const seat of room.seats) {
+    const ws = sockets.get(seat.id);
+    if (ws) send(ws, { t: "room", room: roomView(room, seat.id), event });
+  }
+}
 
-  const path = audioPath(rec);
-  const file = Bun.file(path);
-  if (!(await file.exists())) return new Response("Not found", { status: 404 });
+/** Point this socket at a seat, displacing any socket already sitting there. */
+function attach(ws: Socket, room: Room, seat: Seat) {
+  const existing = sockets.get(seat.id);
+  if (existing && existing !== ws) {
+    send(existing, { t: "closed", reason: "You opened this seat in another window." });
+    existing.data.seatId = null;
+    existing.close();
+  }
+  ws.data.code = room.code;
+  ws.data.seatId = seat.id;
+  sockets.set(seat.id, ws);
+  send(ws, { t: "seat", code: room.code, playerId: seat.id, token: seat.token });
+  broadcast(room);
+}
 
-  const size = (await stat(path)).size;
-  const range = req.headers.get("range");
-  const headers: Record<string, string> = {
-    "content-type": rec.mime || "application/octet-stream",
-    "accept-ranges": "bytes",
-    "cache-control": "private, max-age=3600",
-  };
+/** The room and seat this socket is sitting in, or an error if it isn't. */
+function seated(ws: Socket): { room: Room; seatId: string } {
+  const { code, seatId } = ws.data;
+  const room = code ? getRoom(code) : undefined;
+  if (!room || !seatId || !room.seats.some((s) => s.id === seatId))
+    throw new RoomError("you are not in a room any more");
+  return { room, seatId };
+}
 
-  if (range) {
-    const match = /bytes=(\d*)-(\d*)/.exec(range);
-    if (match) {
-      const start = match[1] ? Number(match[1]) : 0;
-      const end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
-      if (start >= size || start > end) {
-        return new Response(null, {
-          status: 416,
-          headers: { "content-range": `bytes */${size}` },
-        });
+function handle(ws: Socket, msg: ClientMessage) {
+  switch (msg.t) {
+    case "create": {
+      const { room, seat } = createRoom(msg.name);
+      attach(ws, room, seat);
+      return;
+    }
+    case "join": {
+      const { room, seat } = joinRoom(msg.code, msg.name);
+      attach(ws, room, seat);
+      return;
+    }
+    case "resume": {
+      // A stale seat isn't an error the player can act on — send them back to
+      // the front door with the reason instead of flashing a toast.
+      try {
+        const { room, seat } = resumeSeat(msg.code, msg.playerId, msg.token);
+        attach(ws, room, seat);
+      } catch (err) {
+        const reason = err instanceof RoomError ? err.message : "that room is gone";
+        send(ws, { t: "closed", reason });
       }
-      return new Response(file.slice(start, end + 1), {
-        status: 206,
-        headers: { ...headers, "content-range": `bytes ${start}-${end}/${size}` },
-      });
+      return;
     }
   }
 
-  return new Response(file, { headers: { ...headers, "content-length": String(size) } });
+  const { room, seatId } = seated(ws);
+
+  switch (msg.t) {
+    case "name":
+      setName(room, seatId, msg.name);
+      return broadcast(room);
+    case "color":
+      setColor(room, seatId, msg.color as PawnColor);
+      return broadcast(room);
+    case "cards":
+      setCards(room, seatId, Number(msg.cardsPerPlayer));
+      return broadcast(room);
+    case "begin":
+      return broadcast(room, begin(room, seatId));
+    case "rotate":
+      return broadcast(room, rotate(room, seatId, Number(msg.quarters)));
+    case "insert":
+      return broadcast(room, insert(room, seatId, String(msg.arrowId)));
+    case "move":
+      return broadcast(room, move(room, seatId, Number(msg.r), Number(msg.c)));
+    case "pass":
+      return broadcast(room, pass(room, seatId));
+    case "again":
+      again(room, seatId);
+      return broadcast(room);
+    case "leave": {
+      sockets.delete(seatId);
+      ws.data.seatId = null;
+      ws.data.code = null;
+      removeSeat(room, seatId);
+      send(ws, { t: "closed", reason: "You left the room." });
+      if (getRoom(room.code)) broadcast(room);
+      return;
+    }
+    default:
+      throw new RoomError("the server did not understand that");
+  }
 }
 
-function adminView(m: Manifest, storage?: StorageStatus) {
-  return {
-    storage,
-    recordings: m.recordings.map((rec, i) => ({
-      id: rec.id,
-      name: rec.name,
-      relation: rec.relation,
-      size: rec.size,
-      mime: rec.mime,
-      kind: rec.kind,
-      createdAt: rec.createdAt,
-      audioUrl: `/api/audio/${rec.id}`,
-      treasureId: ASSIGNMENT_ORDER[i] ?? null,
-      treasureName: treasureById(ASSIGNMENT_ORDER[i] ?? "")?.name ?? null,
-      active: i < effectiveCount(m),
-    })),
-    collectibleCount: m.collectibleCount,
-    effectiveCount: effectiveCount(m),
-    maxCollectibles: MAX_COLLECTIBLES,
-    playerName: m.playerName,
-  };
-}
-
-const requireAuth = (req: Request) =>
-  isAuthed(req) ? null : json({ error: "unauthorised" }, { status: 401 });
-
-const server = Bun.serve({
+const server = Bun.serve<WsData, never>({
   port: PORT,
   hostname: "0.0.0.0",
-  idleTimeout: 60,
-  // headroom over MAX_UPLOAD for multipart overhead
-  maxRequestBodySize: MAX_UPLOAD + 16 * 1024 * 1024,
   development: process.env.NODE_ENV !== "production",
 
   routes: {
     "/": index,
-    "/admin": admin,
-
-    "/api/health": () => json({ ok: true }),
-
-    "/api/game": { GET: () => handleGameConfig() },
-
-    "/api/audio/:id": {
-      GET: (req) => handleAudio(req, (req as unknown as { params: { id: string } }).params.id),
-    },
-
-    "/api/admin/session": {
-      GET: (req) =>
-        json({ authed: isAuthed(req), passwordConfigured }),
-      POST: async (req) => {
-        if (!passwordConfigured)
-          return json(
-            { error: "ADMIN_PASSWORD is not set on the server" },
-            { status: 503 },
-          );
-        const body = (await req.json().catch(() => ({}))) as { password?: string };
-        if (!checkPassword(body.password ?? ""))
-          return json({ error: "wrong password" }, { status: 401 });
-        return json({ ok: true }, { headers: { "set-cookie": sessionCookie() } });
-      },
-      DELETE: () => json({ ok: true }, { headers: { "set-cookie": clearCookie() } }),
-    },
-
-    "/api/admin/state": {
-      GET: async (req) =>
-        requireAuth(req) ??
-        json(adminView(await readManifest(), await storageStatus())),
-    },
-
-    "/api/admin/settings": {
-      PUT: async (req) => {
-        const denied = requireAuth(req);
-        if (denied) return denied;
-        const body = (await req.json().catch(() => ({}))) as {
-          collectibleCount?: number | null;
-          playerName?: string;
-        };
-        const m = await update((cur) => ({
-          ...cur,
-          collectibleCount:
-            body.collectibleCount === undefined
-              ? cur.collectibleCount
-              : body.collectibleCount === null
-                ? null
-                : Math.max(0, Math.min(Math.trunc(body.collectibleCount), MAX_COLLECTIBLES)),
-          playerName: body.playerName === undefined ? cur.playerName : body.playerName.trim(),
-        }));
-        return json(adminView(m));
-      },
-    },
-
-    "/api/admin/recordings": {
-      POST: async (req) => {
-        const denied = requireAuth(req);
-        if (denied) return denied;
-
-        const form = await req.formData().catch(() => null);
-        if (!form) return json({ error: "expected multipart form data" }, { status: 400 });
-
-        const file = form.get("audio");
-        const name = String(form.get("name") ?? "").trim();
-        const relation = String(form.get("relation") ?? "").trim();
-
-        if (!(file instanceof File)) return json({ error: "no audio file" }, { status: 400 });
-        if (!name) return json({ error: "who recorded it?" }, { status: 400 });
-        if (file.size === 0) return json({ error: "that file is empty" }, { status: 400 });
-        if (file.size > MAX_UPLOAD)
-          return json(
-            { error: `file is larger than ${MAX_UPLOAD / 1024 / 1024} MB` },
-            { status: 413 },
-          );
-
-        const mime = file.type || "audio/mpeg";
-        const dotted = file.name.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase();
-        const ext = EXT_BY_MIME[mime] ?? dotted ?? ".bin";
-        if (!mime.startsWith("audio/") && !mime.startsWith("video/") && !EXT_BY_MIME[mime])
-          return json(
-            { error: `${mime || "that file"} is neither audio nor video` },
-            { status: 415 },
-          );
-
-        await addRecording({ name, relation, mime, ext, bytes: await file.arrayBuffer() });
-        return json(adminView(await readManifest()), { status: 201 });
-      },
-    },
-
-    "/api/admin/recordings/:id": {
-      PATCH: async (req) => {
-        const denied = requireAuth(req);
-        if (denied) return denied;
-        const { id } = (req as unknown as { params: { id: string } }).params;
-        const body = (await req.json().catch(() => ({}))) as {
-          name?: string;
-          relation?: string;
-          kind?: MediaKind;
-        };
-        const kind = body.kind === "audio" || body.kind === "video" ? body.kind : undefined;
-        if (!(await updateRecording(id, { ...body, kind })))
-          return json({ error: "not found" }, { status: 404 });
-        return json(adminView(await readManifest()));
-      },
-      DELETE: async (req) => {
-        const denied = requireAuth(req);
-        if (denied) return denied;
-        const { id } = (req as unknown as { params: { id: string } }).params;
-        if (!(await deleteRecording(id))) return json({ error: "not found" }, { status: 404 });
-        return json(adminView(await readManifest()));
-      },
-    },
+    // shareable invite link: labyrinth.example/j/ABCD
+    "/j/:code": index,
+    "/api/health": () => json({ ok: true, rooms: roomCount() }),
   },
 
-  fetch() {
+  fetch(req, srv) {
+    if (new URL(req.url).pathname === "/ws") {
+      if (srv.upgrade(req, { data: { code: null, seatId: null } satisfies WsData })) return;
+      return new Response("expected a websocket upgrade", { status: 400 });
+    }
     return new Response("Not found", { status: 404 });
+  },
+
+  websocket: {
+    // Bun's own pings keep the socket alive through a long think.
+    idleTimeout: 300,
+    sendPings: true,
+    maxPayloadLength: MAX_MESSAGE,
+
+    message(ws, raw) {
+      let msg: ClientMessage;
+      try {
+        msg = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as ClientMessage;
+      } catch {
+        return send(ws, { t: "error", message: "that was not a message" });
+      }
+      try {
+        handle(ws, msg);
+      } catch (err) {
+        if (err instanceof RoomError) return send(ws, { t: "error", message: err.message });
+        console.error("action failed", msg.t, err);
+        send(ws, { t: "error", message: "something went wrong on the server" });
+      }
+    },
+
+    close(ws) {
+      const { code, seatId } = ws.data;
+      if (!seatId) return;
+      if (sockets.get(seatId) === ws) sockets.delete(seatId);
+      const room = code ? getRoom(code) : undefined;
+      if (!room) return;
+      disconnect(room, seatId);
+      if (getRoom(room.code)) broadcast(room);
+    },
   },
 });
 
-const m = await recordBoot();
-const storage = await storageStatus();
+setInterval(
+  () => {
+    const dropped = reapIdleRooms();
+    if (dropped) console.log(`swept ${dropped} idle room${dropped === 1 ? "" : "s"}`);
+  },
+  5 * 60 * 1000,
+).unref();
 
 console.log(`🏰  Labyrinth listening on http://localhost:${server.port}`);
-console.log(`    recordings: ${m.recordings.length}  ·  collectibles: ${effectiveCount(m)}`);
-console.log(
-  `    storage: ${storage.dataDir}  ·  ${
-    storage.mounted === true
-      ? "on a mounted volume"
-      : storage.mounted === false
-        ? "NOT a mount point"
-        : "mount state unknown"
-  }  ·  boot #${storage.boots}`,
-);
-
-if (storage.mounted === false && process.env.NODE_ENV === "production") {
-  console.warn(
-    `⚠  ${storage.dataDir} is not a mounted volume — recordings uploaded here will be\n` +
-      "   destroyed by the next deploy. Attach a Railway volume at this exact path.",
-  );
-}
-if (!storage.writable)
-  console.error(`✖  ${storage.dataDir} is not writable — uploads will fail.`);
-if (!passwordConfigured)
-  console.warn("⚠  ADMIN_PASSWORD is not set — /admin is locked until you set it.");

@@ -276,7 +276,11 @@ button {
 #game {
   min-height: 100vh;
   display: grid;
-  place-items: center;
+  justify-items: center;
+  /* centred when it fits; top-aligned when it doesn't, so a short window can
+     scroll to the rest of the panel instead of clipping it off */
+  align-items: start;
+  align-items: safe center;
   padding: 24px;
 }
 
@@ -501,13 +505,19 @@ button {
   left: 0;
   width: var(--tile);
   height: var(--tile);
-  transform: translate3d(calc(var(--c) * var(--step)), calc(var(--r) * var(--step)), 0);
+  /* --ox/--oy fan several pawns out when they end up on the same square */
+  transform: translate3d(
+    calc(var(--c) * var(--step) + var(--ox, 0%)),
+    calc(var(--r) * var(--step) + var(--oy, 0%)),
+    0
+  );
   transition: transform 140ms linear;
   pointer-events: none;
   z-index: 8;
   filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5));
 }
 
+/* riding a pushed line, rather than walking a corridor */
 .pawn.settling {
   transition: transform var(--slide-ms) cubic-bezier(0.32, 0.72, 0.28, 1);
 }
@@ -517,6 +527,34 @@ button {
   height: 78%;
   display: block;
   margin: 11%;
+  transition: width 0.2s ease, height 0.2s ease, margin 0.2s ease;
+}
+
+.pawn.crowded .pawn-art {
+  width: 56%;
+  height: 56%;
+  margin: 22%;
+}
+
+/* whoever the table is waiting on */
+.pawn.in-turn::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 245, 200, 0.9);
+  box-shadow: 0 0 12px rgba(255, 236, 160, 0.8);
+  animation: target-pulse 1.6s ease-in-out infinite;
+}
+
+.pawn.crowded.in-turn::before {
+  inset: 24%;
+}
+
+/* still in the game, but their browser isn't */
+.pawn.away {
+  opacity: 0.45;
+  filter: grayscale(0.7) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5));
 }
 
 /* ─────────────────────────── arrows ─────────────────────────── */
@@ -787,155 +825,6 @@ button {
   animation: fade-in 0.28s ease both;
 }
 
-/* the message player doubles as a replay window opened from the finale's
-   gallery, so it has to sit above the finale rather than behind it */
-#reveal-scrim {
-  z-index: 55;
-}
-
-.reveal {
-  width: min(560px, 100%);
-  background: linear-gradient(#f8f2df, var(--parchment-deep));
-  color: var(--ink);
-  border: 3px solid #c9a94e;
-  border-radius: 16px;
-  padding: 30px 34px;
-  text-align: center;
-  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7);
-  animation: reveal-in 0.44s cubic-bezier(0.2, 1.25, 0.4, 1) both;
-}
-
-@keyframes reveal-in {
-  from {
-    transform: scale(0.86) translateY(18px);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
-}
-
-.reveal .found {
-  font-size: 0.76rem;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: #8a6a2a;
-  margin: 0 0 10px;
-}
-
-.reveal-icon {
-  width: 128px;
-  height: 128px;
-  margin: 0 auto 6px;
-  animation: pop 0.6s cubic-bezier(0.2, 1.5, 0.4, 1) both 0.1s;
-}
-
-@keyframes pop {
-  from {
-    transform: scale(0.3) rotate(-12deg);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
-}
-
-.reveal-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.reveal h2 {
-  margin: 4px 0 0;
-  font-size: 1.05rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--navy);
-}
-
-.reveal .from {
-  margin: 16px 0 2px;
-  font-size: 0.74rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: #8a6a2a;
-}
-
-.reveal .who {
-  margin: 0;
-  font-size: 2rem;
-  color: #7d3a2e;
-}
-
-.reveal .relation {
-  margin: 2px 0 0;
-  font-style: italic;
-  color: #6b4a24;
-}
-
-.reveal audio {
-  width: 100%;
-  margin: 20px 0 18px;
-  border-radius: 30px;
-}
-
-.reveal-video {
-  display: block;
-  width: 100%;
-  max-height: 46vh;
-  margin: 18px 0 16px;
-  border-radius: 10px;
-  background: #120c08;
-  border: 2px solid #c9a94e;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-}
-
-/* shown only when the browser cannot decode the file */
-.media-error {
-  margin: 14px 0 16px;
-  padding: 11px 14px;
-  border-radius: 8px;
-  background: rgba(200, 56, 46, 0.1);
-  border: 1px solid #c8382e;
-  font-size: 0.88rem;
-  line-height: 1.5;
-  color: #7d2b22;
-}
-
-.media-error a {
-  color: var(--navy);
-  font-weight: 600;
-}
-
-/* marks a gallery entry as a video rather than a voice memo */
-.gallery-item .badge {
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-size: 0.7rem;
-  font-style: normal;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--navy);
-  color: #ffe9a8;
-}
-
-.reveal .demo-note {
-  margin: 16px 0;
-  padding: 10px 14px;
-  background: rgba(28, 47, 116, 0.08);
-  border: 1px dashed #9a8657;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-style: italic;
-  color: #6b4a24;
-}
-
 /* ─────────────────────────── finale ─────────────────────────── */
 
 .finale {
@@ -966,55 +855,6 @@ button {
   color: #4a3116;
 }
 
-.gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
-  text-align: left;
-}
-
-.gallery-item {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid #d3bd85;
-  border-radius: 10px;
-  padding: 9px 11px;
-  width: 100%;
-  text-align: left;
-  transition: transform 0.14s ease, box-shadow 0.14s ease;
-}
-
-.gallery-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.16);
-}
-
-.gallery-item svg {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-}
-
-.gallery-item span {
-  font-size: 0.92rem;
-  line-height: 1.25;
-}
-
-.gallery-item small {
-  display: block;
-  color: #7a5a30;
-  font-style: italic;
-  font-size: 0.78rem;
-}
-
-.gallery-item.playing {
-  border-color: var(--navy);
-  box-shadow: 0 0 0 2px rgba(28, 47, 116, 0.25);
-}
-
 .confetti {
   position: fixed;
   inset: 0;
@@ -1035,6 +875,375 @@ button {
 @keyframes fall {
   to {
     transform: translateY(108vh) rotate(760deg);
+  }
+}
+
+/* ─────────────────────────── front door ─────────────────────────── */
+
+.field {
+  display: block;
+  text-align: left;
+  max-width: 320px;
+  margin: 0 auto 18px;
+}
+
+.field > span {
+  display: block;
+  font-size: 0.74rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+  color: #8a6a2a;
+}
+
+.field em {
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: #6b4a24;
+}
+
+.field input[type="text"] {
+  width: 100%;
+  font: inherit;
+  font-size: 1rem;
+  padding: 11px 13px;
+  border-radius: 8px;
+  border: 2px solid #b99a48;
+  background: #fffdf5;
+  color: var(--ink);
+}
+
+.field input:focus-visible {
+  outline: none;
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(28, 47, 116, 0.16);
+}
+
+.range-field input[type="range"] {
+  width: 100%;
+  accent-color: var(--navy);
+}
+
+.or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 320px;
+  margin: 22px auto 14px;
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #9a8657;
+}
+
+.or::before,
+.or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(107, 74, 36, 0.28);
+}
+
+.join-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: stretch;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.code-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1.5rem;
+  letter-spacing: 0.42em;
+  text-align: center;
+  text-transform: uppercase;
+  text-indent: 0.42em; /* balances the trailing letter-spacing */
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 2px solid #b99a48;
+  background: #fffdf5;
+  color: var(--navy);
+}
+
+.code-input:focus-visible {
+  outline: none;
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(28, 47, 116, 0.16);
+}
+
+.join-row .btn {
+  padding: 10px 20px;
+  font-size: 0.86rem;
+}
+
+.err {
+  max-width: 340px;
+  margin: 16px auto 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(200, 56, 46, 0.12);
+  border: 1px solid #c8382e;
+  color: #8c241c;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+/* ─────────────────────────── lobby ─────────────────────────── */
+
+.code-badge {
+  font-size: clamp(2.4rem, 12vw, 3.6rem);
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  color: var(--navy);
+  background: #fffdf5;
+  border: 3px dashed #c9a94e;
+  border-radius: 12px;
+  padding: 10px 6px 12px;
+  margin: 0 auto 14px;
+  max-width: 340px;
+  user-select: all;
+}
+
+.pawn-choice button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ─────────────────────────── the table ─────────────────────────── */
+
+.roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: rgba(12, 22, 56, 0.5);
+  border: 1px solid rgba(242, 201, 63, 0.2);
+  color: #efe1bb;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.seat-pawn {
+  flex: 0 0 26px;
+  height: 26px;
+}
+
+.seat-pawn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  margin: 0;
+}
+
+.seat-who {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.seat-who strong {
+  display: block;
+  font-size: 0.94rem;
+  font-weight: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seat-who em {
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+  font-style: normal;
+}
+
+.seat-who small {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: #a58c5d;
+}
+
+/* whoever the table is waiting on */
+.seat.turn {
+  border-color: var(--gold);
+  background: rgba(242, 201, 63, 0.14);
+  box-shadow: 0 0 12px rgba(242, 201, 63, 0.25);
+}
+
+.seat.away {
+  opacity: 0.55;
+}
+
+.seat.away .seat-pawn {
+  filter: grayscale(0.8);
+}
+
+.seat-pips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px;
+  max-width: 40%;
+}
+
+.seat-pips svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+/* the lobby's roster sits on parchment, not on the dark table */
+.lobby-roster {
+  margin-bottom: 18px;
+  text-align: left;
+}
+
+.lobby-roster .seat {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: #d3bd85;
+  color: var(--ink);
+}
+
+.lobby-roster .seat-who small {
+  color: #7a5a30;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.66rem;
+}
+
+.lobby-roster .seat-who em {
+  color: var(--navy);
+}
+
+.standings {
+  margin: 0 0 22px;
+  text-align: left;
+}
+
+.standings .seat {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: #d3bd85;
+  color: var(--ink);
+}
+
+.standings .seat-who small {
+  color: #7a5a30;
+}
+
+.standings .seat.won {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 2px rgba(28, 47, 116, 0.22);
+}
+
+/* ─────────────────────────── the spare tile ─────────────────────────── */
+
+.rotate-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.rotate-row .btn {
+  flex: 1 1 0;
+  padding: 10px 8px;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+}
+
+.turn-btn span {
+  font-size: 1.15em;
+  line-height: 1;
+}
+
+/* the row only glows while turning the tile is actually a move you can make */
+.rotate-row.live .btn {
+  border-color: var(--gold-deep);
+  box-shadow: 0 4px 0 var(--navy-dark), 0 0 14px rgba(242, 201, 63, 0.3);
+}
+
+/* ─────────────────────────── connection ─────────────────────────── */
+
+.offline,
+.toast {
+  position: fixed;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 70;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  letter-spacing: 0.04em;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  max-width: calc(100vw - 24px);
+  text-align: center;
+}
+
+.offline {
+  top: calc(10px + env(safe-area-inset-top));
+  background: #7d2b22;
+  border: 1px solid #c8382e;
+  color: #ffd9d3;
+}
+
+.toast {
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  background: rgba(16, 28, 72, 0.95);
+  border: 1px solid var(--gold-deep);
+  color: #f6e9c4;
+  animation: fade-in 0.2s ease both;
+}
+
+/* ─────────────────────────── short desktop ───────────────────────────
+   A laptop is wide but rarely tall. Four players' worth of roster plus the card
+   and the turn buttons don't fit under 900px, so the card moves beside the text
+   the way it does on a phone. */
+
+@media (min-width: 1001px) and (max-height: 900px) {
+  .panel-body {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .deck {
+    flex: 0 0 96px;
+    min-height: 0;
+  }
+
+  .deck .card {
+    width: 96px;
+  }
+
+  .deck .card.stack-back {
+    top: 5px;
+  }
+
+  .card-caption {
+    text-align: left;
+  }
+
+  .panel-head h1 {
+    font-size: 1.3rem;
+  }
+
+  .status {
+    min-height: 0;
   }
 }
 
@@ -1065,9 +1274,11 @@ button {
 @media (max-width: 720px), (max-width: 940px) and (max-height: 480px) {
   :root {
     /* fit the board to whichever runs out first, width or height */
+    /* the reserve covers the card, the status line, the turn buttons, the
+       roster chips and the controls that sit under the board */
     --tile: max(
-      36px,
-      min(calc((100vw - 84px) / 7), calc((100dvh - 340px) / 7), 66px)
+      34px,
+      min(calc((100vw - 84px) / 7), calc((100dvh - 420px) / 7), 66px)
     );
     --pad: 26px;
     /* Negative, so the spare rests inside the board's border instead of out on
@@ -1251,39 +1462,63 @@ button {
     font-size: 0.76rem;
   }
 
+  .field {
+    margin-bottom: 12px;
+  }
+
+  .or {
+    margin: 14px auto 10px;
+  }
+
+  .code-badge {
+    letter-spacing: 0.2em;
+    text-indent: 0.2em;
+    padding: 6px 4px 8px;
+    margin-bottom: 10px;
+  }
+
+  .roster {
+    gap: 5px;
+  }
+
+  .seat {
+    padding: 5px 8px;
+  }
+
+  .seat-pawn {
+    flex-basis: 22px;
+    height: 22px;
+  }
+
+  /* two chips per row beside the board, instead of a tall column */
+  #game-roster {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  #game-roster .seat {
+    flex: 1 1 44%;
+    min-width: 0;
+  }
+
+  #game-roster .seat-pips {
+    display: none;
+  }
+
+  .rotate-row .btn {
+    padding: 11px 6px;
+    font-size: 0.68rem;
+  }
+
   /* overlays */
   .scrim {
     padding: 12px;
     place-items: center;
   }
 
-  .reveal {
-    padding: 22px 18px 20px;
-    max-height: 92dvh;
-    overflow-y: auto;
-  }
-
-  .reveal-icon {
-    width: 96px;
-    height: 96px;
-  }
-
-  .reveal .who {
-    font-size: 1.6rem;
-  }
-
-  .reveal audio {
-    margin: 14px 0 14px;
-  }
-
   .finale {
     padding: 26px 18px 22px;
     max-height: 94dvh;
-  }
-
-  .gallery {
-    grid-template-columns: 1fr;
-    gap: 8px;
   }
 }
 

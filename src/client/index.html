@@ -8,49 +8,92 @@
     />
     <meta name="theme-color" content="#1c2f74" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>Labyrinth — Birthday Edition</title>
+    <title>Labyrinth</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <!-- start screen -->
-    <section id="start" class="screen">
+    <!-- front door -->
+    <section id="home" class="screen">
       <div class="scroll-panel">
-        <div class="crest" id="start-crest"></div>
+        <div class="crest" id="home-crest"></div>
         <h1 class="title">Labyrinth</h1>
-        <p class="subtitle" id="start-subtitle">Birthday Edition</p>
+        <p class="subtitle">Two to four players, one shifting maze</p>
 
-        <div class="blurb">
-          <p id="start-intro">
-            Somewhere in these shifting corridors, people who love you have hidden
-            their voices. Find every treasure, then make your way home.
-          </p>
-          <p class="short-rules">
-            You know the game. Reach the treasure on your card and a voice unlocks —
-            then an unseen rival shoves the spare tile in to spoil your route.
-          </p>
-          <details class="rules">
-            <summary>The rules, in full</summary>
-            <ol>
-              <li>Your card shows the treasure you must reach — it glows on the board.</li>
-              <li>Every turn you <strong>must</strong> slide the spare tile into the maze at one of the
-                gold arrows. You cannot push it straight back where it just came out.</li>
-              <li>Then walk as far as the open corridors allow, or stay where you are.</li>
-              <li>Reach the treasure and a message unlocks. Then a rival shoves the
-                spare tile in somewhere of its own choosing.</li>
-              <li>Collect them all and return to your corner to win.</li>
-            </ol>
-          </details>
-        </div>
-
-        <p class="card-caption"><small>Choose your adventurer</small></p>
-        <div class="pawn-choice" id="pawn-choice"></div>
+        <label class="field">
+          <span>Your name</span>
+          <input type="text" id="home-name" maxlength="16" placeholder="Alex" autocomplete="nickname" />
+        </label>
 
         <div class="start-actions">
-          <button class="btn gold" id="begin">Enter the labyrinth</button>
-          <button class="btn ghost" id="resume" hidden>Resume saved game</button>
+          <button class="btn gold" id="home-create">Start a new room</button>
         </div>
 
-        <p class="note" id="start-note"></p>
+        <p class="or">or join one</p>
+
+        <form class="join-row" id="join-form">
+          <input
+            type="text"
+            id="home-code"
+            class="code-input"
+            maxlength="4"
+            placeholder="CODE"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+          />
+          <button class="btn" type="submit">Join</button>
+        </form>
+
+        <p class="err" id="home-error" hidden></p>
+
+        <details class="rules">
+          <summary>How it plays</summary>
+          <ol>
+            <li>Everyone starts in their own corner. Your card shows the treasure
+              you have to reach — it glows on the board, and only you can see it.</li>
+            <li>On your turn, <strong>turn the spare tile</strong> however you like,
+              then <strong>push it in</strong> at one of the gold arrows. You cannot
+              push it straight back where the last one came out.</li>
+            <li>Whatever the push does to the maze, it does to everyone — pawns
+              carried off the far edge reappear on the tile just inserted.</li>
+            <li>Then walk as far as the open corridors allow, or stay put.</li>
+            <li>Reach your treasure and take the next card. Empty your stack, walk
+              back to your own corner, and you win.</li>
+          </ol>
+        </details>
+      </div>
+    </section>
+
+    <!-- lobby -->
+    <section id="lobby" class="screen" hidden>
+      <div class="scroll-panel">
+        <h1 class="title">The Gathering</h1>
+        <p class="subtitle">Read the code out; they type it in</p>
+
+        <div class="code-badge" id="lobby-code">····</div>
+        <div class="start-actions">
+          <button class="btn ghost" id="copy-link">Copy invite link</button>
+        </div>
+
+        <p class="card-caption"><small>At the table</small></p>
+        <ul class="roster lobby-roster" id="lobby-roster"></ul>
+
+        <p class="card-caption"><small>Your corner</small></p>
+        <div class="pawn-choice" id="corner-picker"></div>
+
+        <div id="host-settings" hidden>
+          <label class="field range-field">
+            <span>Treasures each <em id="cards-out"></em></span>
+            <input type="range" id="cards" min="1" max="12" step="1" />
+          </label>
+        </div>
+
+        <div class="start-actions">
+          <button class="btn gold" id="begin">Deal and start</button>
+          <button class="btn ghost" id="lobby-leave">Leave</button>
+        </div>
+
+        <p class="note" id="lobby-note"></p>
       </div>
     </section>
 
@@ -67,7 +110,7 @@
         <aside class="panel">
           <div class="panel-head">
             <h1>Labyrinth</h1>
-            <p id="panel-sub">Birthday Edition</p>
+            <p id="panel-sub"></p>
           </div>
 
           <!-- column on desktop, card-beside-text on a phone -->
@@ -79,13 +122,23 @@
             </div>
           </div>
 
+          <div class="rotate-row" id="rotate-row">
+            <button class="btn turn-btn" id="rot-ccw" title="Turn the spare tile anticlockwise">
+              <span aria-hidden="true">⟲</span> Turn
+            </button>
+            <button class="btn turn-btn" id="rot-cw" title="Turn the spare tile clockwise (R)">
+              Turn <span aria-hidden="true">⟳</span>
+            </button>
+          </div>
+
+          <ul class="roster" id="game-roster"></ul>
           <div class="progress" id="progress"></div>
 
           <div class="controls">
             <button class="btn" id="stay" disabled>Stay put</button>
-            <button class="btn" id="messages" hidden>Messages</button>
+            <button class="btn" id="pass" hidden>Skip them</button>
             <button class="btn" id="mute">Sound on</button>
-            <button class="btn" id="restart">Restart</button>
+            <button class="btn" id="leave">Leave</button>
           </div>
 
           <p class="turn-meta" id="turn-meta"></p>
@@ -93,15 +146,13 @@
       </div>
     </main>
 
-    <!-- treasure unlocked -->
-    <div id="reveal-scrim" class="scrim" hidden>
-      <div class="reveal" id="reveal"></div>
+    <!-- someone won -->
+    <div id="over-scrim" class="scrim" hidden>
+      <div class="finale" id="over"></div>
     </div>
 
-    <!-- ending -->
-    <div id="finale-scrim" class="scrim" hidden>
-      <div class="finale" id="finale"></div>
-    </div>
+    <div class="offline" id="offline" hidden>Connection lost — reconnecting…</div>
+    <div class="toast" id="toast" hidden></div>
 
     <script type="module" src="./main.ts"></script>
   </body>

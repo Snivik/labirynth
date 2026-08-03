@@ -180,84 +180,63 @@ export function arrowCells(arrow: Arrow): { entry: [number, number]; exit: [numb
   }
 }
 
+export interface Cell {
+  r: number;
+  c: number;
+}
+
 export interface ShiftResult {
   grid: Tile[][];
   spare: Tile;
   entry: [number, number];
   exit: [number, number];
-  /** Which direction the whole line travelled. */
-  dir: Dir;
-  /** Non-null when a pawn was carried off the far edge and wrapped around. */
-  wrappedPawn: { from: [number, number]; to: [number, number] } | null;
-  /** New position of every pawn that rode along with the line. */
-  pawn: { r: number; c: number };
+  /** New position of every pawn passed in, in the same order. */
+  pawns: Cell[];
+  /** Indices of the pawns that rode off the far edge and wrapped around. */
+  wrapped: number[];
 }
 
 /**
  * Push `spare` into the labyrinth at `arrow`. Every tile in that row or column
- * slides one step; the tile forced off the far edge becomes the next spare. A
- * pawn riding the ejected tile reappears on the tile just inserted.
+ * slides one step; the tile forced off the far edge becomes the next spare. Any
+ * pawn riding the ejected tile reappears on the tile just inserted — with four
+ * players there can be several of them on the same line at once.
  */
 export function shift(
   grid: Tile[][],
   spare: Tile,
   arrow: Arrow,
-  pawn: { r: number; c: number },
+  pawns: readonly Cell[],
 ): ShiftResult {
   const next = grid.map((row) => row.slice());
   const { entry, exit } = arrowCells(arrow);
-  const dir: Dir =
-    arrow.side === "top" ? 2 : arrow.side === "bottom" ? 0 : arrow.side === "left" ? 1 : 3;
+  const vertical = arrow.side === "top" || arrow.side === "bottom";
+  /** Which way along the line every tile travels: +1 down/right, -1 up/left. */
+  const step = arrow.side === "top" || arrow.side === "left" ? 1 : -1;
 
-  const ejected = grid[exit[0]]![exit[1]]!;
-  const inserted: Tile = { ...spare };
-
-  let newPawn = { ...pawn };
-  let wrappedPawn: ShiftResult["wrappedPawn"] = null;
-
-  if (arrow.side === "top" || arrow.side === "bottom") {
-    const c = arrow.index;
-    const order =
-      arrow.side === "top"
-        ? [...Array(SIZE - 1).keys()].map((i) => SIZE - 1 - i) // 6..1
-        : [...Array(SIZE - 1).keys()]; //                        0..5
-    for (const r of order) {
-      const src = arrow.side === "top" ? r - 1 : r + 1;
-      next[r]![c] = grid[src]![c]!;
-    }
-    next[entry[0]]![c] = inserted;
-
-    if (pawn.c === c) {
-      if (pawn.r === exit[0]) {
-        wrappedPawn = { from: [pawn.r, pawn.c], to: [entry[0], entry[1]] };
-        newPawn = { r: entry[0], c: entry[1] };
-      } else {
-        newPawn = { r: pawn.r + (arrow.side === "top" ? 1 : -1), c };
-      }
-    }
-  } else {
-    const r = arrow.index;
-    const order =
-      arrow.side === "left"
-        ? [...Array(SIZE - 1).keys()].map((i) => SIZE - 1 - i)
-        : [...Array(SIZE - 1).keys()];
-    for (const c of order) {
-      const src = arrow.side === "left" ? c - 1 : c + 1;
-      next[r]![c] = grid[r]![src]!;
-    }
-    next[r]![entry[1]] = inserted;
-
-    if (pawn.r === r) {
-      if (pawn.c === exit[1]) {
-        wrappedPawn = { from: [pawn.r, pawn.c], to: [entry[0], entry[1]] };
-        newPawn = { r: entry[0], c: entry[1] };
-      } else {
-        newPawn = { r, c: pawn.c + (arrow.side === "left" ? 1 : -1) };
-      }
-    }
+  // Written into a copy and read from the original, so nothing is clobbered
+  // before it has been read. The one square with no source is the entry.
+  for (let i = 0; i < SIZE; i++) {
+    const src = i - step;
+    if (src < 0 || src >= SIZE) continue;
+    if (vertical) next[i]![arrow.index] = grid[src]![arrow.index]!;
+    else next[arrow.index]![i] = grid[arrow.index]![src]!;
   }
 
-  return { grid: next, spare: ejected, entry, exit, dir, wrappedPawn, pawn: newPawn };
+  const ejected = grid[exit[0]]![exit[1]]!;
+  next[entry[0]]![entry[1]] = { ...spare };
+
+  const wrapped: number[] = [];
+  const moved = pawns.map((pawn, i) => {
+    if (vertical ? pawn.c !== arrow.index : pawn.r !== arrow.index) return { ...pawn };
+    if (vertical ? pawn.r === exit[0] : pawn.c === exit[1]) {
+      wrapped.push(i);
+      return { r: entry[0], c: entry[1] };
+    }
+    return vertical ? { r: pawn.r + step, c: pawn.c } : { r: pawn.r, c: pawn.c + step };
+  });
+
+  return { grid: next, spare: ejected, entry, exit, pawns: moved, wrapped };
 }
 
 export const key = (r: number, c: number) => `${r},${c}`;
